@@ -14,7 +14,10 @@ export function useAuth(redirectIfNoUser = true) {
       setUser(data?.user || null);
       setLoading(false);
 
-      if (redirectIfNoUser && !data?.user && location.pathname !== "/auth") {
+      // ✅ Prevent redirect while on verification or password reset routes
+      const safeRoutes = ["/auth", "/verified", "/reset-password"];
+
+      if (redirectIfNoUser && !data?.user && !safeRoutes.includes(location.pathname)) {
         navigate("/auth");
       }
     };
@@ -24,7 +27,10 @@ export function useAuth(redirectIfNoUser = true) {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       const currentUser = session?.user || null;
       setUser(currentUser);
-      if (!currentUser && redirectIfNoUser) navigate("/auth");
+      const safeRoutes = ["/auth", "/verified", "/reset-password"];
+      if (!currentUser && redirectIfNoUser && !safeRoutes.includes(location.pathname)) {
+        navigate("/auth");
+      }
     });
 
     return () => listener.subscription.unsubscribe();

@@ -11,6 +11,12 @@ export default function Auth() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
+  // ✅ Dynamically set redirect URL (local vs production)
+  const redirectUrl =
+    window.location.hostname === "localhost"
+      ? "http://localhost:5173"
+      : "https://tradestein.vercel.app";
+
   // ✅ Handle Login / Sign Up
   const handleAuth = async (e) => {
     e.preventDefault();
@@ -19,11 +25,20 @@ export default function Auth() {
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
         if (error) throw error;
         setMessage("✅ Logged in successfully!");
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${redirectUrl}/auth`, // redirect after email verification
+          },
+        });
         if (error) throw error;
         setMessage("✅ Check your email to confirm your account!");
       }
@@ -43,7 +58,7 @@ export default function Auth() {
     setLoading(true);
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: "http://localhost:5173/reset-password", // 👈 key redirect
+      redirectTo: `${redirectUrl}/reset-password`,
     });
 
     if (error) {
@@ -57,7 +72,12 @@ export default function Auth() {
 
   // ✅ Handle Google Login
   const handleGoogleLogin = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({ provider: "google" });
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${redirectUrl}/auth`,
+      },
+    });
     if (error) alert("Google login failed: " + error.message);
   };
 
@@ -71,7 +91,11 @@ export default function Auth() {
             className="absolute w-1 h-1 bg-emerald-400/40 rounded-full"
             initial={{ opacity: 0, y: 0 }}
             animate={{ opacity: [0, 1, 0], y: [0, -100], x: Math.sin(i) * 60 }}
-            transition={{ duration: 6 + i * 0.4, repeat: Infinity, delay: i * 0.3 }}
+            transition={{
+              duration: 6 + i * 0.4,
+              repeat: Infinity,
+              delay: i * 0.3,
+            }}
             style={{
               top: `${Math.random() * 100}%`,
               left: `${Math.random() * 100}%`,

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import { supabase } from "./lib/supabaseClient";
 
 import Auth from "./pages/Auth";
@@ -12,10 +12,12 @@ import Settings from "./pages/Settings";
 import Profile from "./pages/Profile";
 import Replay from "./pages/Replay";
 import ResetPassword from "./pages/ResetPassword";
+import Verified from "./pages/Verified";
 
 import BottomNav from "./components/Layout/BottomNav";
 import AnimatedPageWrapper from "./components/Layout/AnimatedPageWrapper";
 import { useAuth } from "./lib/useAuth";
+import NeonLoader from "./components/ui/NeonLoader";
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -25,117 +27,122 @@ export default function App() {
   const [recoveryMode, setRecoveryMode] = useState(false);
   const [redirected, setRedirected] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
+  const [suppressRedirect, setSuppressRedirect] = useState(false);
 
-  // ✅ Handle password recovery links
+  // ✅ Handle Supabase verification & recovery hashes
   useEffect(() => {
-    const handleRecoveryLink = async () => {
-      const hash = window.location.hash;
-      if (hash.includes("type=recovery")) {
-        setRecoveryMode(true);
-        const params = new URLSearchParams(hash.replace("#", "?"));
-        const access_token = params.get("access_token");
-        const refresh_token = params.get("refresh_token");
+    const hash = window.location.hash;
+    if (!hash) return;
 
-        if (access_token && refresh_token) {
-          const { error } = await supabase.auth.setSession({
-            access_token,
-            refresh_token,
-          });
-          if (!error) navigate("/reset-password", { replace: true });
-        }
-      }
-    };
-    handleRecoveryLink();
+    const params = new URLSearchParams(hash.replace("#", "?"));
+    const access_token = params.get("access_token");
+    const refresh_token = params.get("refresh_token");
+    const type = params.get("type");
+
+    // 🔹 Ensure React Router takes over — clear the hash before render
+    if (type) {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
+    // ✅ Handle signup verification
+    if (type === "signup" && access_token) {
+      setSuppressRedirect(true);
+      supabase.auth
+        .setSession({ access_token, refresh_token })
+        .then(() => {
+          console.log("✅ Supabase session set for signup verification");
+          navigate("/verified", { replace: true });
+        })
+        .catch((err) => {
+          console.error("❌ Failed to set session:", err);
+          navigate("/auth");
+        });
+    }
+
+    // ✅ Handle password recovery
+    if (type === "recovery" && access_token) {
+      setSuppressRedirect(true);
+      setRecoveryMode(true);
+      supabase.auth
+        .setSession({ access_token, refresh_token })
+        .then(() => navigate("/reset-password", { replace: true }))
+        .catch(console.error);
+    }
   }, [navigate]);
 
-  // ✅ Only redirect ONCE after login — no bouncing on Replay etc.
+  // ✅ Redirect after login (skip if verification or recovery is ongoing)
   useEffect(() => {
-    if (!loading && user && !redirected && !recoveryMode) {
-      setRedirected(true);
+    if (!loading && user && !redirected && !recoveryMode && !suppressRedirect) {
       if (location.pathname === "/auth" || location.pathname === "/") {
+        setRedirected(true);
         navigate("/dashboard", { replace: true });
       }
     }
-  }, [user, loading, redirected, navigate, recoveryMode, location.pathname]);
+  }, [user, loading, redirected, navigate, recoveryMode, suppressRedirect, location.pathname]);
 
-  // ✅ Smooth loading animation between pages
+  // ✅ Page transition loader
   useEffect(() => {
     setPageLoading(true);
-    const timer = setTimeout(() => setPageLoading(false), 600); // slightly longer for fade
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => setPageLoading(false), 500);
+    return () => clearTimeout(t);
   }, [location.pathname]);
 
-  // ✅ Global loading state while checking auth
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-[#0A0A0B] text-gray-400">
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.6 }}
-          className="text-center"
-        >
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-400 mx-auto mb-4"></div>
-          <p>Checking authentication...</p>
-        </motion.div>
-      </div>
-    );
-  }
+  // ✅ Loader while checking auth
+  if (loading) return <NeonLoader text="Checking authentication..." />;
 
-  // ✅ Page loading fade-in/out (on route change)
+  // ✅ Loader between routes
   if (pageLoading && user) {
-    return (
-      <motion.div
-        key="page-loader"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.4 }}
-        className="flex flex-col items-center justify-center h-screen bg-[#0A0A0B]"
-      >
-        <motion.div
-          animate={{ rotate: 360 }}
-          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
-          className="h-10 w-10 border-2 border-emerald-400 border-t-transparent rounded-full mb-4"
-        />
-        <p className="text-sm text-gray-400">
-          Loading {location.pathname.replace("/", "") || "dashboard"}...
-        </p>
-      </motion.div>
-    );
+    const current = location.pathname.replace("/", "") || "dashboard";
+    return <NeonLoader text={`Loading ${current}...`} />;
   }
 
-  // ✅ Normal app content
   return (
-    <div className="min-h-screen bg-[#0A0A0B] text-white relative flex flex-col">
+    <div className="min-h-screen bg-[#0A0A0B] text-white flex flex-col">
       <AnimatePresence mode="wait">
         <AnimatedPageWrapper key={location.pathname}>
           <Routes location={location}>
+            {/* Default route */}
+            <Route
+              path="/"
+              element={user ? <Navigate to="/dashboard" replace /> : <Navigate to="/auth" replace />}
+            />
+
             {/* Public routes */}
             <Route path="/auth" element={<Auth />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/verified" element={<Verified />} />
 
             {/* Protected routes */}
-            {user ? (
+            {user && (
               <>
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/calendar" element={<Calendar />} />
                 <Route path="/journal" element={<Journal />} />
-                <Route path="/replay" element={<Replay />} /> {/* ✅ Replay stays stable */}
+                <Route path="/replay" element={<Replay />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/profile" element={<Profile />} />
               </>
-            ) : (
-              <Route path="*" element={<Navigate to="/auth" replace />} />
+            )}
+
+            {/* Fallbacks */}
+            {!user && (
+              <Route
+                path="*"
+                element={
+                  location.pathname === "/verified" ? (
+                    <Verified />
+                  ) : (
+                    <Navigate to="/auth" replace />
+                  )
+                }
+              />
             )}
           </Routes>
         </AnimatedPageWrapper>
       </AnimatePresence>
 
-      {/* ✅ Bottom Nav for logged-in users */}
+      {/* Bottom nav only for logged-in users */}
       {user && !recoveryMode && <BottomNav />}
     </div>
   );
