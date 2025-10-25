@@ -2,10 +2,10 @@
   "name": "trade-journal",
   "private": true,
   "type": "module",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "scripts": {
     "dev": "vite",
-    "build": "npx --yes vite build",
+    "build": "node build.js",
     "preview": "vite preview",
     "server": "node server.js",
     "clean": "rimraf dist node_modules && npm cache clean --force && npm install"
