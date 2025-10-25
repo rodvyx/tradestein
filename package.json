@@ -5,7 +5,7 @@
   "version": "0.0.0",
   "scripts": {
     "dev": "vite",
-    "build": "vite build --debug",
+    "build": "npx vite build --debug",
     "preview": "vite preview",
     "server": "node server.js",
     "clean": "rimraf dist node_modules && npm cache clean --force && npm install"
