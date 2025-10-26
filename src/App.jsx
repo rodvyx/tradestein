@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
-import { AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { supabase } from "./lib/supabaseClient";
 
 import Auth from "./pages/Auth";
@@ -13,6 +13,7 @@ import Profile from "./pages/Profile";
 import Replay from "./pages/Replay";
 import ResetPassword from "./pages/ResetPassword";
 import Verified from "./pages/Verified";
+import Landing from "./pages/Landing";
 
 import BottomNav from "./components/Layout/BottomNav";
 import AnimatedPageWrapper from "./components/Layout/AnimatedPageWrapper";
@@ -28,8 +29,19 @@ export default function App() {
   const [redirected, setRedirected] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
   const [suppressRedirect, setSuppressRedirect] = useState(false);
+  const [showLanding, setShowLanding] = useState(false);
+  const [bootingUp, setBootingUp] = useState(false);
 
-  // ✅ Handle Supabase verification & recovery hashes
+  // ✅ Show landing once per session
+  useEffect(() => {
+    const hasSeenLanding = sessionStorage.getItem("hasSeenLanding");
+    if (!hasSeenLanding) {
+      setShowLanding(true);
+      sessionStorage.setItem("hasSeenLanding", "true");
+    }
+  }, []);
+
+  // ✅ Handle Supabase verification & recovery
   useEffect(() => {
     const hash = window.location.hash;
     if (!hash) return;
@@ -39,27 +51,19 @@ export default function App() {
     const refresh_token = params.get("refresh_token");
     const type = params.get("type");
 
-    // 🔹 Ensure React Router takes over — clear the hash before render
-    if (type) {
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
+    if (type) window.history.replaceState({}, document.title, window.location.pathname);
 
-    // ✅ Handle signup verification
     if (type === "signup" && access_token) {
       setSuppressRedirect(true);
       supabase.auth
         .setSession({ access_token, refresh_token })
-        .then(() => {
-          console.log("✅ Supabase session set for signup verification");
-          navigate("/verified", { replace: true });
-        })
+        .then(() => navigate("/verified", { replace: true }))
         .catch((err) => {
           console.error("❌ Failed to set session:", err);
           navigate("/auth");
         });
     }
 
-    // ✅ Handle password recovery
     if (type === "recovery" && access_token) {
       setSuppressRedirect(true);
       setRecoveryMode(true);
@@ -70,34 +74,76 @@ export default function App() {
     }
   }, [navigate]);
 
-  // ✅ Redirect after login (skip if verification or recovery is ongoing)
+  // ✅ Smooth redirect after login (with boot animation)
   useEffect(() => {
-    if (!loading && user && !redirected && !recoveryMode && !suppressRedirect) {
+    if (
+      !loading &&
+      user &&
+      !redirected &&
+      !recoveryMode &&
+      !suppressRedirect &&
+      !["/verified", "/reset-password"].includes(location.pathname)
+    ) {
       if (location.pathname === "/auth" || location.pathname === "/") {
         setRedirected(true);
-        navigate("/dashboard", { replace: true });
+        setBootingUp(true);
+
+        // Simulate “system boot”
+        setTimeout(() => {
+          navigate("/dashboard", { replace: true });
+          setBootingUp(false);
+        }, 2200);
       }
     }
   }, [user, loading, redirected, navigate, recoveryMode, suppressRedirect, location.pathname]);
 
-  // ✅ Page transition loader
+  // ✅ Page loader — smoother transition (extended to 1.2s)
   useEffect(() => {
     setPageLoading(true);
-    const t = setTimeout(() => setPageLoading(false), 500);
+
+    const t = setTimeout(() => setPageLoading(false), 1200); // 🔥 smoother load timing
     return () => clearTimeout(t);
   }, [location.pathname]);
 
   // ✅ Loader while checking auth
   if (loading) return <NeonLoader text="Checking authentication..." />;
 
-  // ✅ Loader between routes
+  // ✅ Landing screen (smooth fade into Auth)
+  if (showLanding) {
+    return (
+      <div className="min-h-screen bg-[#0A0A0B] flex items-center justify-center overflow-hidden">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key="landing"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.8 }}
+            className="absolute inset-0 bg-[#0A0A0B]"
+          >
+            <Landing
+              onFinish={() => {
+                // Smooth fade delay before showing auth
+                setTimeout(() => setShowLanding(false), 300);
+              }}
+            />
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    );
+  }
+
+  // ✅ Boot loader before dashboard
+  if (bootingUp) return <NeonLoader text="Initializing Trading Environment..." />;
+
+  // ✅ Page loader between routes
   if (pageLoading && user) {
     const current = location.pathname.replace("/", "") || "dashboard";
     return <NeonLoader text={`Loading ${current}...`} />;
   }
 
   return (
-    <div className="min-h-screen bg-[#0A0A0B] text-white flex flex-col">
+    <div className="min-h-screen bg-[#0A0A0B] text-white flex flex-col transition-all duration-500">
       <AnimatePresence mode="wait">
         <AnimatedPageWrapper key={location.pathname}>
           <Routes location={location}>
@@ -125,16 +171,12 @@ export default function App() {
               </>
             )}
 
-            {/* Fallbacks */}
+            {/* Fallback */}
             {!user && (
               <Route
                 path="*"
                 element={
-                  location.pathname === "/verified" ? (
-                    <Verified />
-                  ) : (
-                    <Navigate to="/auth" replace />
-                  )
+                  location.pathname === "/verified" ? <Verified /> : <Navigate to="/auth" replace />
                 }
               />
             )}
@@ -142,8 +184,10 @@ export default function App() {
         </AnimatedPageWrapper>
       </AnimatePresence>
 
-      {/* Bottom nav only for logged-in users */}
-      {user && !recoveryMode && <BottomNav />}
+      {/* ✅ Bottom nav */}
+      {user &&
+        !recoveryMode &&
+        !["/auth", "/verified", "/reset-password"].includes(location.pathname) && <BottomNav />}
     </div>
   );
 }

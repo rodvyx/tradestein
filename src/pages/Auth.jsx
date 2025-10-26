@@ -11,13 +11,13 @@ export default function Auth() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
 
-  // ✅ Dynamically set redirect URL (local vs production)
+  // 🌍 Environment-aware redirect
   const redirectUrl =
     window.location.hostname === "localhost"
-      ? "http://localhost:5173"
-      : "https://tradestein.vercel.app";
+      ? "http://localhost:5173/verified"
+      : "https://tradestein.vercel.app/verified";
 
-  // ✅ Handle Login / Sign Up
+  // 🟢 Handle Email Login / Signup
   const handleAuth = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -35,55 +35,56 @@ export default function Auth() {
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: {
-            emailRedirectTo: `${redirectUrl}/auth`, // redirect after email verification
-          },
+          options: { emailRedirectTo: redirectUrl },
         });
         if (error) throw error;
-        setMessage("✅ Check your email to confirm your account!");
+        setMessage("📨 Check your email to verify your account!");
       }
     } catch (err) {
       setMessage(`❌ ${err.message}`);
     }
+
     setLoading(false);
   };
 
-  // ✅ Handle Forgot Password
+  // 🟠 Handle Forgot Password
   const handleForgotPassword = async () => {
-    if (!email) {
-      setMessage("⚠️ Please enter your email before resetting your password.");
-      return;
-    }
+    if (!email) return setMessage("⚠️ Please enter your email first.");
 
     setLoading(true);
-
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${redirectUrl}/reset-password`,
+      redirectTo: redirectUrl.replace("/verified", "/reset-password"),
     });
 
-    if (error) {
-      setMessage("❌ " + error.message);
-    } else {
-      setMessage("📨 Password reset link sent! Check your inbox.");
-    }
-
+    if (error) setMessage("❌ " + error.message);
+    else setMessage("📨 Password reset link sent! Check your inbox.");
     setLoading(false);
   };
 
-  // ✅ Handle Google Login
+  // 🔵 Handle Google Login
   const handleGoogleLogin = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${redirectUrl}/auth`,
-      },
-    });
-    if (error) alert("Google login failed: " + error.message);
+    const redirectTo =
+      window.location.hostname === "localhost"
+        ? "http://localhost:5173/verified"
+        : "https://tradestein.vercel.app/verified";
+
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo,
+          queryParams: { access_type: "offline", prompt: "consent" },
+        },
+      });
+      if (error) throw error;
+    } catch (err) {
+      setMessage("❌ Google sign-in failed: " + err.message);
+    }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#0A0A0B] text-white relative overflow-hidden">
-      {/* ✨ Ambient particles background */}
+      {/* ✨ Floating particles background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {[...Array(25)].map((_, i) => (
           <motion.div
@@ -104,20 +105,20 @@ export default function Auth() {
         ))}
       </div>
 
-      {/* 🌌 Auth Form Container */}
+      {/* 🌌 Auth Card — now with cinematic fade in */}
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="z-10 bg-[#0D1117]/80 backdrop-blur-2xl border border-emerald-500/10 shadow-[0_0_40px_rgba(16,185,129,0.15)] 
-        rounded-2xl p-8 w-[90%] max-w-md flex flex-col items-center"
+        initial={{ opacity: 0, y: 30, scale: 0.98 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={{ duration: 0.9, ease: "easeOut" }}
+        className="z-10 bg-[#0D1117]/80 backdrop-blur-2xl border border-emerald-500/10 
+        shadow-[0_0_40px_rgba(16,185,129,0.15)] rounded-2xl p-8 w-[90%] max-w-md flex flex-col items-center"
       >
         <h1 className="text-3xl font-bold text-emerald-400 mb-6">
           {isLogin ? "Welcome Back" : "Create Account"}
         </h1>
 
+        {/* Email & Password Form */}
         <form onSubmit={handleAuth} className="w-full space-y-4">
-          {/* Email Input */}
           <div>
             <label className="text-sm text-gray-400 mb-1 flex items-center gap-2">
               <Mail size={16} /> Email
@@ -133,7 +134,6 @@ export default function Auth() {
             />
           </div>
 
-          {/* Password Input */}
           <div className="relative">
             <label className="text-sm text-gray-400 mb-1 flex items-center gap-2">
               <Lock size={16} /> Password
@@ -156,7 +156,6 @@ export default function Auth() {
             </button>
           </div>
 
-          {/* Submit Button */}
           <motion.button
             whileTap={{ scale: 0.96 }}
             disabled={loading}
@@ -164,15 +163,11 @@ export default function Auth() {
             className="w-full bg-emerald-500 hover:bg-emerald-400 text-black font-semibold py-2 
             rounded-xl shadow-[0_0_15px_rgba(16,185,129,0.4)] transition"
           >
-            {loading
-              ? "Processing..."
-              : isLogin
-              ? "Sign In"
-              : "Sign Up"}
+            {loading ? "Processing..." : isLogin ? "Sign In" : "Sign Up"}
           </motion.button>
         </form>
 
-        {/* Forgot Password (only for login) */}
+        {/* Forgot Password */}
         {isLogin && (
           <button
             onClick={handleForgotPassword}
@@ -182,7 +177,7 @@ export default function Auth() {
           </button>
         )}
 
-        {/* Google Sign-In */}
+        {/* Google Login */}
         <div className="mt-5 w-full">
           <button
             onClick={handleGoogleLogin}
@@ -198,7 +193,7 @@ export default function Auth() {
           </button>
         </div>
 
-        {/* Switch Mode (Login / Sign Up) */}
+        {/* Switch Mode */}
         <p className="text-sm text-gray-400 mt-6">
           {isLogin ? "Don't have an account?" : "Already have an account?"}{" "}
           <button
@@ -209,7 +204,6 @@ export default function Auth() {
           </button>
         </p>
 
-        {/* Status Message */}
         {message && (
           <p className="mt-4 text-sm text-center text-gray-300">{message}</p>
         )}

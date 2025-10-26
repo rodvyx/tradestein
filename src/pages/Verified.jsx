@@ -32,13 +32,13 @@ export default function Verified() {
           console.warn("⚠️ No tokens in URL. Assuming verified link without session.");
         }
 
-        // Try to fetch user after session set (or skip if none)
+        // Fetch user (optional, just to confirm)
         const { data } = await supabase.auth.getUser();
 
         if (data?.user) {
-          console.log("✅ Supabase user found:", data.user.email);
-        } else {
-          console.log("ℹ️ No Supabase user active. Still showing verified success screen.");
+          console.log("✅ Verified user:", data.user.email);
+          // Optional: sign out immediately after verification
+          await supabase.auth.signOut();
         }
 
         setTimeout(() => setStatus("success"), 600);
@@ -193,9 +193,7 @@ export default function Verified() {
           onClick={() => {
             setRedirecting(true);
             setTimeout(() => {
-              import.meta.env.DEV
-                ? navigate("/auth")
-                : navigate("/dashboard");
+              import.meta.env.DEV ? navigate("/auth") : navigate("/dashboard");
             }, 1000);
           }}
           className="px-6 py-2 bg-gradient-to-r from-purple-500 to-emerald-500 hover:from-purple-400 hover:to-emerald-400 rounded-lg text-white font-medium transition-all shadow-[0_0_10px_#10b981]"
