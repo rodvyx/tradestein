@@ -14,8 +14,6 @@ import {
   NeonParticles,
   FieldShell,
   ImageLightbox,
-  DatePicker,
-  TimePicker,
   TextAreaAuto,
   ReactiveNeonUnderline,
 } from "../components/journal/JournalPieces";
@@ -60,7 +58,7 @@ export default function Journal() {
     fetchUser();
   }, []);
 
-  // sync trades snapshot from hook or localStorage
+  // sync trades snapshot
   useEffect(() => {
     if (Object.keys(trades || {}).length > 0) {
       setTradesByDate(trades);
@@ -128,7 +126,7 @@ export default function Journal() {
       confluences,
       done_right: doneRight,
       done_wrong: doneWrong,
-      what_to_do: whatToDo,
+      what_to_improve: whatToDo, // <-- Supabase column
       entry_chart: entryChartPreview || null,
       htf_chart: htfChartPreview || null,
     };
@@ -140,6 +138,7 @@ export default function Journal() {
     await saveTrade(entry);
     setRefetchFlag((f) => f + 1);
 
+    // reset form
     setPair("");
     setEntryTime("");
     setExitTime("");
@@ -173,7 +172,7 @@ export default function Journal() {
   }
 
   return (
-    <div className="relative min-h-screen bg-[#0b1220] pb-24 text-white/90">
+    <div className="relative min-h-screen bg-[#0b1220] pb-24 text-white/90 overflow-visible">
       <NeonParticles />
 
       {/* Header */}
@@ -191,29 +190,61 @@ export default function Journal() {
         </div>
       </div>
 
-      {/* Form */}
+      {/* ------------------------------ FORM ------------------------------ */}
       <div className="mx-auto max-w-6xl px-6 py-6">
         <div className="rounded-3xl border border-white/10 bg-[rgba(12,18,32,.6)] p-6 shadow-[0_0_40px_rgba(16,185,129,.06)]">
+          {/* DATE + PAIR + TIMES */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
             <FieldShell label="Date" icon={<CalendarIcon size={16} className="text-emerald-300" />}>
-              <DatePicker value={date} onChange={setDate} />
+              <div
+                className="relative w-full cursor-pointer"
+                onClick={(e) => e.currentTarget.querySelector("input")?.showPicker?.()}
+              >
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none border border-white/10 hover:border-emerald-400/40 cursor-pointer"
+                />
+              </div>
             </FieldShell>
             <FieldShell label="Pair" icon={<ImageIcon size={16} className="text-cyan-300" />}>
               <input
                 value={pair}
                 onChange={(e) => setPair(e.target.value.toUpperCase())}
                 placeholder="AAPL / EURUSD"
-                className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none"
+                className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none border border-white/10 hover:border-cyan-400/40"
               />
             </FieldShell>
             <FieldShell label="Entry Time" icon={<ClockIcon size={16} className="text-emerald-300" />}>
-              <TimePicker value={entryTime} onChange={setEntryTime} />
+              <div
+                className="relative w-full cursor-pointer"
+                onClick={(e) => e.currentTarget.querySelector("input")?.showPicker?.()}
+              >
+                <input
+                  type="time"
+                  value={entryTime}
+                  onChange={(e) => setEntryTime(e.target.value)}
+                  className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none border border-white/10 hover:border-emerald-400/40 cursor-pointer"
+                />
+              </div>
             </FieldShell>
             <FieldShell label="Exit Time" icon={<ClockIcon size={16} className="text-emerald-300" />}>
-              <TimePicker value={exitTime} onChange={setExitTime} />
+              <div
+                className="relative w-full cursor-pointer"
+                onClick={(e) => e.currentTarget.querySelector("input")?.showPicker?.()}
+              >
+                <input
+                  type="time"
+                  value={exitTime}
+                  onChange={(e) => setExitTime(e.target.value)}
+                  className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none border border-white/10 hover:border-emerald-400/40 cursor-pointer"
+                />
+              </div>
             </FieldShell>
           </div>
 
+          {/* BALANCES */}
           <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-4">
             <FieldShell label="Balance Before ($)">
               <input
@@ -221,7 +252,7 @@ export default function Journal() {
                 value={balanceBefore}
                 onChange={(e) => setBalanceBefore(e.target.value)}
                 placeholder="0.00"
-                className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none"
+                className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none border border-white/10 hover:border-emerald-400/40"
               />
             </FieldShell>
             <FieldShell label="Balance After ($)">
@@ -230,7 +261,7 @@ export default function Journal() {
                 value={balanceAfter}
                 onChange={(e) => setBalanceAfter(e.target.value)}
                 placeholder="0.00"
-                className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none"
+                className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none border border-white/10 hover:border-emerald-400/40"
               />
             </FieldShell>
             <FieldShell label="Amount Risked ($)">
@@ -239,14 +270,17 @@ export default function Journal() {
                 value={amountRisked}
                 onChange={(e) => setAmountRisked(e.target.value)}
                 placeholder="0.00"
-                className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none"
+                className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none border border-white/10 hover:border-emerald-400/40"
               />
             </FieldShell>
             <FieldShell label="Auto R:R">
-              <div className="px-3 py-2 text-emerald-300">{finalRR === "" ? "—" : finalRR}</div>
+              <div className="px-3 py-2 text-emerald-300">
+                {finalRR === "" ? "—" : finalRR}
+              </div>
             </FieldShell>
           </div>
 
+          {/* NOTES */}
           <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
             <FieldShell label="Confluences">
               <TextAreaAuto
@@ -256,10 +290,18 @@ export default function Journal() {
               />
             </FieldShell>
             <FieldShell label="Done Right">
-              <TextAreaAuto value={doneRight} onChange={setDoneRight} placeholder="What went well..." />
+              <TextAreaAuto
+                value={doneRight}
+                onChange={setDoneRight}
+                placeholder="What went well..."
+              />
             </FieldShell>
             <FieldShell label="Done Wrong">
-              <TextAreaAuto value={doneWrong} onChange={setDoneWrong} placeholder="What went wrong..." />
+              <TextAreaAuto
+                value={doneWrong}
+                onChange={setDoneWrong}
+                placeholder="What went wrong..."
+              />
             </FieldShell>
             <FieldShell label="What to do differently">
               <TextAreaAuto
@@ -270,7 +312,7 @@ export default function Journal() {
             </FieldShell>
           </div>
 
-          {/* Attachments */}
+          {/* ATTACHMENTS */}
           <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
             <FieldShell label="Entry Chart" icon={<Upload size={16} className="text-cyan-300" />}>
               <input
@@ -308,7 +350,7 @@ export default function Journal() {
             </FieldShell>
           </div>
 
-          {/* Desktop Save */}
+          {/* SAVE BUTTON */}
           <div className="mt-6 hidden md:block">
             <button
               onClick={handleAddEntry}
@@ -319,7 +361,7 @@ export default function Journal() {
           </div>
         </div>
 
-        {/* Feed */}
+        {/* ----------------------------- FEED ----------------------------- */}
         <h2 className="mt-8 mb-3 text-lg font-semibold">Your Journal Entries</h2>
         {flatFeed.length === 0 ? (
           <p className="text-white/60">No journal entries yet.</p>
@@ -328,7 +370,10 @@ export default function Journal() {
             {flatFeed.map((t) => {
               const isWin = Number(t.pnl) >= 0;
               return (
-                <div key={t.id} className="rounded-2xl border border-white/10 bg-[rgba(12,18,32,.6)] p-4">
+                <div
+                  key={t.id}
+                  className="rounded-2xl border border-white/10 bg-[rgba(12,18,32,.6)] p-4"
+                >
                   <div className="flex items-start justify-between gap-4">
                     <div>
                       <p className="text-sm text-white/60">{t.date}</p>
@@ -340,7 +385,8 @@ export default function Journal() {
                         </span>
                         {t.amount_risked ? (
                           <span className="ml-3 text-xs text-white/60">
-                            R:R <b>{Number(t.final_rr ?? 0).toFixed(2)}</b> (risked {Number(t.amount_risked).toFixed(2)}$)
+                            R:R <b>{Number(t.final_rr ?? 0).toFixed(2)}</b> (risked{" "}
+                            {Number(t.amount_risked).toFixed(2)}$)
                           </span>
                         ) : null}
                       </h3>
@@ -353,12 +399,22 @@ export default function Journal() {
                     </button>
                   </div>
 
-                  {(t.confluences || t.done_right || t.done_wrong || t.what_to_do) && (
+                  {(t.confluences ||
+                    t.done_right ||
+                    t.done_wrong ||
+                    t.what_to_improve ||
+                    t.what_to_do ||
+                    t.whatToDo) && (
                     <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
                       {t.confluences && <FeedBlock title="Confluences" text={t.confluences} />}
                       {t.done_right && <FeedBlock title="Done Right" text={t.done_right} />}
                       {t.done_wrong && <FeedBlock title="Done Wrong" text={t.done_wrong} />}
-                      {t.what_to_do && <FeedBlock title="What to do differently" text={t.what_to_do} />}
+                      {(t.what_to_improve || t.what_to_do || t.whatToDo) && (
+                        <FeedBlock
+                          title="What to do differently"
+                          text={t.what_to_improve || t.what_to_do || t.whatToDo}
+                        />
+                      )}
                     </div>
                   )}
 

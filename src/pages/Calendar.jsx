@@ -32,14 +32,13 @@ const WEEKDAYS_FULL = [
 ];
 
 const COLORS = {
-  // neon palette
-  profit: "#00FFC6", // bright mint
-  profitDeep: "#14b8a6", // teal
-  loss: "#FF3355", // neon red
-  lossWarm: "#fb923c", // orange
+  profit: "#00FFC6",
+  profitDeep: "#14b8a6",
+  loss: "#FF3355",
+  lossWarm: "#fb923c",
   cyan: "#06b6d4",
-  textDark: "#e5e7eb",
-  textLight: "#111827",
+  textLightOnDark: "#ffffff",
+  axisOnDark: "#9CA3AF",
   gridDark: "rgba(255,255,255,0.12)",
   gridLight: "rgba(0,0,0,0.10)",
 };
@@ -48,11 +47,10 @@ const COLORS = {
 
 function fmtMoney(n) {
   const sign = n >= 0 ? "+" : "-";
-  return `${sign}$${Math.abs(n).toFixed(2)}`;
+  return `${sign}$${Math.abs(Number(n || 0)).toFixed(2)}`;
 }
 
 function toISO(d) {
-  // keep local date, avoid TZ shifting
   const copy = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   copy.setMinutes(copy.getMinutes() - copy.getTimezoneOffset());
   return copy.toISOString().slice(0, 10);
@@ -79,7 +77,7 @@ function weekRangeFromKey(weekKey) {
   return { start, end };
 }
 
-/* ------------------------------ neon parts ------------------------------ */
+/* ------------------------------ small bits ------------------------------ */
 
 const NeonNumber = ({ value, size = "2xl" }) => {
   const positive = value >= 0;
@@ -106,7 +104,6 @@ const PulseDot = ({ cx, cy, r = 3, positive = true }) => {
   return (
     <g>
       <circle cx={cx} cy={cy} r={r} fill={fill} />
-      {/* outer glow pulse */}
       <circle
         cx={cx}
         cy={cy}
@@ -120,24 +117,24 @@ const PulseDot = ({ cx, cy, r = 3, positive = true }) => {
   );
 };
 
-/* ------------------------------ page ------------------------------ */
+/* -------------------------------- page -------------------------------- */
 
 export default function Calendar() {
-  /* theme: track global choice for consistent look */
   const [theme, setTheme] = useState("dark");
   useEffect(() => {
     const stored = localStorage.getItem("theme");
     if (stored) setTheme(stored);
-    else setTheme(window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    else setTheme(
+      window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+    );
   }, []);
 
   const [user, setUser] = useState(null);
   const [allTrades, setAllTrades] = useState([]);
   const [tradesByDate, setTradesByDate] = useState({});
-
   const [current, setCurrent] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(null); // "YYYY-MM-DD"
-  const [sparkKey, setSparkKey] = useState(0); // re-animate sparkline per open
+  const [sparkKey, setSparkKey] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -150,7 +147,11 @@ export default function Calendar() {
     if (!user) return;
 
     const fetchTrades = async () => {
-      const { data, error } = await supabase.from("trades").select("*").eq("user_id", user.id);
+      const { data, error } = await supabase
+        .from("trades")
+        .select("*")
+        .eq("user_id", user.id);
+
       if (!error && data) {
         setAllTrades(data);
         const grouped = data.reduce((acc, t) => {
@@ -181,7 +182,7 @@ export default function Calendar() {
     return () => supabase.removeChannel(channel);
   }, [user]);
 
-  /* calendar grid */
+  /* calendar grid data */
   const days = useMemo(() => {
     const year = current.getFullYear();
     const month = current.getMonth();
@@ -212,7 +213,6 @@ export default function Calendar() {
     () => allTrades.filter((t) => (t.date || "").startsWith(monthISO)),
     [allTrades, monthISO]
   );
-
   const totalTrades = monthTrades.length;
 
   const pnlByWeekKey = monthTrades.reduce((acc, t) => {
@@ -274,7 +274,6 @@ export default function Calendar() {
 
   const sparklineData = useMemo(() => {
     if (!selectedDay) return [];
-    // Start at zero then step up for each trade to create a line even for one trade
     const sorted = [...selectedTrades].sort((a, b) =>
       (a.entry_time || "").localeCompare(b.entry_time || "")
     );
@@ -342,12 +341,12 @@ export default function Calendar() {
           </button>
         </div>
 
-        {/* Summary chips */}
+        {/* Summary chips (restored) */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
           <SummaryCard title="Best Week" theme={theme}>
             {bestWeekKey && bestWeekRange ? (
               <>
-                <div className="text-base sm:text-lg font-medium">
+                <div className="text-base sm:text-lg font-medium text-white">
                   {bestWeekRange.start.getUTCDate()}–{bestWeekRange.end.getUTCDate()}{" "}
                   {bestWeekRange.end.toLocaleString(undefined, { month: "short" })}
                 </div>
@@ -361,11 +360,11 @@ export default function Calendar() {
           </SummaryCard>
 
           <SummaryCard title="Most Profitable Day" theme={theme}>
-            <div className="text-lg font-semibold">{mostProfitableDay}</div>
+            <div className="text-lg font-semibold text-white">{mostProfitableDay}</div>
           </SummaryCard>
 
           <SummaryCard title="Total Trades" theme={theme}>
-            <div className="text-lg font-semibold">{totalTrades}</div>
+            <div className="text-lg font-semibold text-white">{totalTrades}</div>
           </SummaryCard>
         </div>
 
@@ -383,9 +382,9 @@ export default function Calendar() {
           {days.map((d) => {
             const pnl = d.trades.reduce((a, t) => a + (Number(t.pnl) || 0), 0);
             const dotColor =
-                pnl > 0 ? COLORS.profit : pnl < 0 ? COLORS.loss : "rgba(148,163,184,0.6)";
+              pnl > 0 ? COLORS.profit : pnl < 0 ? COLORS.loss : "rgba(148,163,184,0.6)";
             const inMonthOpacity = d.inMonth ? 1 : 0.45;
-            const glow = isToday(d.date) ? `0 0 0 2px rgba(0,255,198,.25)` : "none";
+            const glow = isToday(d.date) ? `0 0 0 2px rgba(0,255,198,.35)` : "none";
 
             return (
               <button
@@ -397,7 +396,9 @@ export default function Calendar() {
                   borderColor: borderCol,
                   opacity: inMonthOpacity,
                   boxShadow: glow,
-                  minHeight: 90,
+                  minHeight: 100,
+                  overflow: "hidden",            // keep pills inside
+                  position: "relative",
                 }}
                 title={d.inMonth ? `Open ${d.iso}` : undefined}
               >
@@ -416,17 +417,18 @@ export default function Calendar() {
                   />
                 </div>
 
-                {/* two tiny pills */}
+                {/* two tiny pills — confined and aligned */}
                 <div className="mt-2 space-y-1">
                   {d.trades.slice(0, 2).map((t) => {
                     const pos = Number(t.pnl) >= 0;
                     return (
                       <div
                         key={t.id}
-                        className="text-[11px] px-2 py-1 rounded"
+                        className="text-[11px] px-2 py-1 rounded truncate"
                         style={{
                           background: pos ? "rgba(0,255,198,0.12)" : "rgba(255,51,85,0.12)",
                           color: pos ? "#c1f3d3" : "#fecaca",
+                          maxWidth: "100%",                 // never overflow
                         }}
                         title={`${t.ticker} ${fmtMoney(Number(t.pnl) || 0)}`}
                       >
@@ -443,7 +445,7 @@ export default function Calendar() {
         {/* Bottom charts */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mt-6 pb-10">
           <ChartCard title="PnL by Day of Week" theme={theme}>
-            <ResponsiveContainer width="100%" height={220}>
+            <ResponsiveContainer width="100%" height={260}>
               <BarChart data={chartPnLByWeekday}>
                 <defs>
                   <linearGradient id="pnlPos" x1="0" y1="0" x2="0" y2="1">
@@ -455,16 +457,16 @@ export default function Calendar() {
                     <stop offset="100%" stopColor={COLORS.lossWarm} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke={theme === "dark" ? COLORS.gridDark : COLORS.gridLight} vertical={false} />
-                <XAxis dataKey="name" stroke={theme === "dark" ? "#9CA3AF" : "#4B5563"} />
-                <YAxis stroke={theme === "dark" ? "#9CA3AF" : "#4B5563"} />
+                <CartesianGrid stroke={COLORS.gridDark} vertical={false} />
+                <XAxis dataKey="name" stroke={COLORS.axisOnDark} />
+                <YAxis stroke={COLORS.axisOnDark} />
                 <Tooltip
                   cursor={false}
                   contentStyle={{
-                    background: theme === "dark" ? "rgba(17,24,39,0.9)" : "#f3f4f6",
+                    background: "rgba(17,24,39,0.9)",
                     border: "none",
                     borderRadius: 10,
-                    color: theme === "dark" ? COLORS.textDark : COLORS.textLight,
+                    color: COLORS.textLightOnDark,
                     boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
                   }}
                   formatter={(v) => [fmtMoney(v), "PnL"]}
@@ -485,7 +487,7 @@ export default function Calendar() {
                   <LabelList
                     position="top"
                     formatter={(v) => (v ? fmtMoney(v) : "")}
-                    fill={theme === "dark" ? COLORS.textDark : COLORS.textLight}
+                    fill={COLORS.textLightOnDark}   // white labels (restored)
                     fontSize={12}
                   />
                 </Bar>
@@ -494,18 +496,18 @@ export default function Calendar() {
           </ChartCard>
 
           <ChartCard title="Trade Frequency Over Time" theme={theme}>
-            <ResponsiveContainer width="100%" height={220}>
+            <ResponsiveContainer width="100%" height={260}>
               <LineChart data={chartTradeFrequency}>
-                <CartesianGrid stroke={theme === "dark" ? COLORS.gridDark : COLORS.gridLight} vertical={false} />
-                <XAxis dataKey="date" stroke={theme === "dark" ? "#9CA3AF" : "#4B5563"} />
-                <YAxis allowDecimals={false} stroke={theme === "dark" ? "#9CA3AF" : "#4B5563"} />
+                <CartesianGrid stroke={COLORS.gridDark} vertical={false} />
+                <XAxis dataKey="date" stroke={COLORS.axisOnDark} />
+                <YAxis allowDecimals={false} stroke={COLORS.axisOnDark} />
                 <Tooltip
                   cursor={false}
                   contentStyle={{
-                    background: theme === "dark" ? "rgba(17,24,39,0.9)" : "#f3f4f6",
+                    background: "rgba(17,24,39,0.9)",
                     border: "none",
                     borderRadius: 10,
-                    color: theme === "dark" ? COLORS.textDark : COLORS.textLight,
+                    color: COLORS.textLightOnDark,
                     boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
                   }}
                   formatter={(v) => [v, "Trades"]}
@@ -544,7 +546,10 @@ export default function Calendar() {
                 style={{ background: cardBg, borderColor: borderCol }}
               >
                 {/* header */}
-                <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: borderCol }}>
+                <div
+                  className="flex items-center justify-between px-4 py-3 border-b"
+                  style={{ borderColor: borderCol }}
+                >
                   <div className="flex flex-col gap-1">
                     <div className="text-xs opacity-70">{selectedDay}</div>
                     <div className="flex items-center gap-3">
@@ -554,7 +559,11 @@ export default function Calendar() {
                       </div>
                     </div>
                   </div>
-                  <button onClick={() => setSelectedDay(null)} className="p-2 rounded-xl hover:scale-105 transition" title="Close">
+                  <button
+                    onClick={() => setSelectedDay(null)}
+                    className="p-2 rounded-xl hover:scale-105 transition"
+                    title="Close"
+                  >
                     <X />
                   </button>
                 </div>
@@ -584,16 +593,16 @@ export default function Calendar() {
                               <stop offset="100%" stopColor={COLORS.lossWarm} />
                             </linearGradient>
                           </defs>
-                          <CartesianGrid stroke={theme === "dark" ? COLORS.gridDark : COLORS.gridLight} vertical={false} />
+                          <CartesianGrid stroke={COLORS.gridDark} vertical={false} />
                           <XAxis dataKey="idx" hide />
                           <YAxis hide />
                           <Tooltip
                             cursor={false}
                             contentStyle={{
-                              background: theme === "dark" ? "rgba(17,24,39,0.9)" : "#f3f4f6",
+                              background: "rgba(17,24,39,0.9)",
                               border: "none",
                               borderRadius: 10,
-                              color: theme === "dark" ? COLORS.textDark : COLORS.textLight,
+                              color: COLORS.textLightOnDark,
                               boxShadow: "0 8px 30px rgba(0,0,0,0.25)",
                             }}
                             formatter={(v) => [fmtMoney(v), "Equity"]}
@@ -612,12 +621,7 @@ export default function Calendar() {
                             stroke={selectedPnL >= 0 ? "url(#sparkStrokePos)" : "url(#sparkStrokeNeg)"}
                             strokeWidth={3}
                             dot={(props) => (
-                              <PulseDot
-                                cx={props.cx}
-                                cy={props.cy}
-                                r={2.8}
-                                positive={selectedPnL >= 0}
-                              />
+                              <PulseDot cx={props.cx} cy={props.cy} r={2.8} positive={selectedPnL >= 0} />
                             )}
                             activeDot={{ r: 5 }}
                             isAnimationActive
@@ -696,7 +700,7 @@ function ChartCard({ title, children, theme }) {
         borderColor: theme === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)",
       }}
     >
-      <h2 className="text-base sm:text-lg font-semibold mb-2 sm:mb-3">{title}</h2>
+      <h2 className="text-base sm:text-lg font-semibold mb-2 sm:mb-3 text-white">{title}</h2>
       {children}
     </div>
   );
