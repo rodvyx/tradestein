@@ -41,7 +41,7 @@ export default function App() {
     }
   }, []);
 
-  // ✅ Handle Supabase verification & recovery
+  // ✅ Handle Supabase verification & recovery links
   useEffect(() => {
     const hash = window.location.hash;
     if (!hash) return;
@@ -74,6 +74,19 @@ export default function App() {
     }
   }, [navigate]);
 
+  // ✅ Listen for Supabase auth state change (fixes post-verification redirect)
+  useEffect(() => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session) {
+        navigate("/dashboard", { replace: true });
+      }
+    });
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, [navigate]);
+
   // ✅ Smooth redirect after login (with boot animation)
   useEffect(() => {
     if (
@@ -97,11 +110,10 @@ export default function App() {
     }
   }, [user, loading, redirected, navigate, recoveryMode, suppressRedirect, location.pathname]);
 
-  // ✅ Page loader — smoother transition (extended to 1.2s)
+  // ✅ Page loader — smoother transition
   useEffect(() => {
     setPageLoading(true);
-
-    const t = setTimeout(() => setPageLoading(false), 1200); // 🔥 smoother load timing
+    const t = setTimeout(() => setPageLoading(false), 1200);
     return () => clearTimeout(t);
   }, [location.pathname]);
 
@@ -123,7 +135,6 @@ export default function App() {
           >
             <Landing
               onFinish={() => {
-                // Smooth fade delay before showing auth
                 setTimeout(() => setShowLanding(false), 300);
               }}
             />

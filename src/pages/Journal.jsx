@@ -18,17 +18,13 @@ import {
   ReactiveNeonUnderline,
 } from "../components/journal/JournalPieces";
 
-/* -------------------------------------------------------------------------- */
-/*                                JOURNAL PAGE                                */
-/* -------------------------------------------------------------------------- */
-
 export default function Journal() {
   const [user, setUser] = useState(null);
   const [tradesByDate, setTradesByDate] = useState({});
-  const { trades, saveTrade, syncStatus } = useSupabaseTrades(user?.id);
-  const [refetchFlag, setRefetchFlag] = useState(0);
+  const { trades, syncStatus } = useSupabaseTrades(user?.id);
+  const [lightboxSrc, setLightboxSrc] = useState(null);
 
-  // form state
+  // Form states
   const [date, setDate] = useState("");
   const [pair, setPair] = useState("");
   const [entryTime, setEntryTime] = useState("");
@@ -42,14 +38,12 @@ export default function Journal() {
   const [doneWrong, setDoneWrong] = useState("");
   const [whatToDo, setWhatToDo] = useState("");
 
-  // files / previews
   const [entryChartFile, setEntryChartFile] = useState(null);
   const [entryChartPreview, setEntryChartPreview] = useState(null);
   const [htfChartFile, setHtfChartFile] = useState(null);
   const [htfChartPreview, setHtfChartPreview] = useState(null);
 
-  const [lightboxSrc, setLightboxSrc] = useState(null);
-
+  /* ------------------------------ Load User ------------------------------ */
   useEffect(() => {
     const fetchUser = async () => {
       const { data } = await supabase.auth.getUser();
@@ -58,18 +52,24 @@ export default function Journal() {
     fetchUser();
   }, []);
 
-  // sync trades snapshot
+  /* -------------------------- Sync Trades ------------------------- */
   useEffect(() => {
-    if (Object.keys(trades || {}).length > 0) {
-      setTradesByDate(trades);
-      localStorage.setItem("trades", JSON.stringify(trades));
+    if (trades && Object.keys(trades).length > 0) {
+      const normalized = Object.fromEntries(
+        Object.entries(trades).map(([d, list]) => [
+          d,
+          list.map((t) => ({ ...t, supa_id: t.id })),
+        ])
+      );
+      setTradesByDate(normalized);
+      localStorage.setItem("trades", JSON.stringify(normalized));
     } else {
-      const saved = localStorage.getItem("trades");
-      if (saved) setTradesByDate(JSON.parse(saved));
+      const cached = localStorage.getItem("trades");
+      if (cached) setTradesByDate(JSON.parse(cached));
     }
-  }, [trades, refetchFlag]);
+  }, [trades]);
 
-  // previews
+  /* -------------------------- File Previews ------------------------- */
   useEffect(() => {
     if (!entryChartFile) return setEntryChartPreview(null);
     const r = new FileReader();
@@ -84,7 +84,7 @@ export default function Journal() {
     r.readAsDataURL(htfChartFile);
   }, [htfChartFile]);
 
-  // math
+  /* -------------------------- Auto R:R ------------------------- */
   const pnl = useMemo(() => {
     const before = parseFloat(balanceBefore || 0);
     const after = parseFloat(balanceAfter || 0);
@@ -101,50 +101,76 @@ export default function Journal() {
     () =>
       Object.entries(tradesByDate)
         .flatMap(([d, list]) =>
-          Array.isArray(list) ? list.map((t) => ({ ...t, date: d })) : []
+          list.map((t) => ({
+            ...t,
+            date: d,
+          }))
         )
         .sort((a, b) => new Date(b.date) - new Date(a.date)),
     [tradesByDate]
   );
 
-  async function handleAddEntry() {
-    if (!date || !pair) {
-      alert("Please provide at least Date and Pair.");
-      return;
+  /* -------------------------- Refresh Trades ------------------------- */
+  const refreshTrades = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("trades")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("date", { ascending: false });
+
+    if (data) {
+      const grouped = data.reduce((acc, t) => {
+        const d = t.date || "Unknown";
+        if (!acc[d]) acc[d] = [];
+        acc[d].push({ ...t, supa_id: t.id });
+        return acc;
+      }, {});
+      setTradesByDate(grouped);
+      localStorage.setItem("trades", JSON.stringify(grouped));
     }
-    const entry = {
-      id: Date.now(),
+  };
+
+  /* -------------------------- Add Entry ------------------------- */
+  async function handleAddEntry() {
+    if (!user) return alert("User not found, please log in again.");
+    if (!date || !pair) return alert("Please provide Date and Pair.");
+
+    const newTrade = {
+      user_id: user.id,
       date,
-      ticker: (pair || "").toUpperCase(),
+      ticker: pair.toUpperCase(),
       entry_time: entryTime || null,
       exit_time: exitTime || null,
-      amount_risked: amountRisked ? Number(amountRisked) : null,
-      balance_before: balanceBefore ? Number(balanceBefore) : null,
-      balance_after: balanceAfter ? Number(balanceAfter) : null,
-      pnl: Number((pnl || 0).toFixed(2)),
-      final_rr: finalRR !== "" ? Number(finalRR) : null,
+      balance_before: balanceBefore ? parseFloat(balanceBefore) : null,
+      balance_after: balanceAfter ? parseFloat(balanceAfter) : null,
+      pnl: pnl,
+      amount_risked: amountRisked ? parseFloat(amountRisked) : null,
+      final_rr: finalRR || null,
       confluences,
       done_right: doneRight,
       done_wrong: doneWrong,
-      what_to_improve: whatToDo, // <-- Supabase column
-      entry_chart: entryChartPreview || null,
-      htf_chart: htfChartPreview || null,
+      what_to_improve: whatToDo,
+      entry_chart: entryChartPreview,
+      htf_chart: htfChartPreview,
     };
 
-    const updated = { ...tradesByDate, [date]: [...(tradesByDate[date] || []), entry] };
-    setTradesByDate(updated);
-    localStorage.setItem("trades", JSON.stringify(updated));
+    const { error } = await supabase.from("trades").insert([newTrade]);
+    if (error) {
+      console.error("Insert failed:", error.message);
+      alert("Failed to save trade.");
+      return;
+    }
 
-    await saveTrade(entry);
-    setRefetchFlag((f) => f + 1);
+    await refreshTrades();
 
-    // reset form
+    // Reset form
     setPair("");
     setEntryTime("");
     setExitTime("");
-    setAmountRisked("");
     setBalanceBefore("");
     setBalanceAfter("");
+    setAmountRisked("");
     setConfluences("");
     setDoneRight("");
     setDoneWrong("");
@@ -153,106 +179,93 @@ export default function Journal() {
     setHtfChartFile(null);
   }
 
-  function handleDelete(dateKey, id) {
-    const list = tradesByDate[dateKey] || [];
-    const updatedList = list.filter((t) => t.id !== id);
-    const updated = { ...tradesByDate };
-    if (updatedList.length === 0) delete updated[dateKey];
-    else updated[dateKey] = updatedList;
-    setTradesByDate(updated);
-    localStorage.setItem("trades", JSON.stringify(updated));
+  /* -------------------------- Delete Entry ------------------------- */
+  async function handleDelete(dateKey, id) {
+    if (!user) return;
+    const { error } = await supabase
+      .from("trades")
+      .delete()
+      .match({ id, user_id: user.id });
+
+    if (error) {
+      console.error("Delete failed:", error.message);
+      alert("Failed to delete trade.");
+      return;
+    }
+
+    console.log("Deleted from Supabase:", id);
+    await refreshTrades();
   }
 
-  if (!user) {
+  if (!user)
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-950 text-white/70">
-        Please log in to access your Journal.
+      <div className="flex h-screen items-center justify-center text-white">
+        Please log in to access your journal.
       </div>
     );
-  }
 
   return (
     <div className="relative min-h-screen bg-[#0b1220] pb-24 text-white/90 overflow-visible">
       <NeonParticles />
 
-      {/* Header */}
-      <div className="sticky top-0 z-30 border-b border-white/5 bg-[#0b1220]/80 px-6 py-5 backdrop-blur-xl">
-        <div className="flex items-center justify-between">
-          <div className="group">
-            <h1 className="text-2xl font-semibold">Journal</h1>
-            <ReactiveNeonUnderline />
-          </div>
-          <div className="text-xs">
-            {syncStatus === "syncing" && <span className="text-yellow-400">• syncing…</span>}
-            {syncStatus === "synced" && <span className="text-emerald-400">• synced</span>}
-            {syncStatus === "error" && <span className="text-red-400">• sync failed</span>}
-          </div>
+      {/* HEADER */}
+      <div className="sticky top-0 z-30 border-b border-white/5 bg-[#0b1220]/80 px-6 py-5 backdrop-blur-xl flex justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Journal</h1>
+          <ReactiveNeonUnderline />
         </div>
+        <span className="text-xs">
+          {syncStatus === "syncing" && <span className="text-yellow-400">• syncing…</span>}
+          {syncStatus === "synced" && <span className="text-emerald-400">• synced</span>}
+        </span>
       </div>
 
-      {/* ------------------------------ FORM ------------------------------ */}
+      {/* FORM */}
       <div className="mx-auto max-w-6xl px-6 py-6">
-        <div className="rounded-3xl border border-white/10 bg-[rgba(12,18,32,.6)] p-6 shadow-[0_0_40px_rgba(16,185,129,.06)]">
-          {/* DATE + PAIR + TIMES */}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <div className="rounded-3xl border border-white/10 bg-[rgba(12,18,32,.6)] p-6 shadow-lg">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <FieldShell label="Date" icon={<CalendarIcon size={16} className="text-emerald-300" />}>
-              <div
-                className="relative w-full cursor-pointer"
-                onClick={(e) => e.currentTarget.querySelector("input")?.showPicker?.()}
-              >
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none border border-white/10 hover:border-emerald-400/40 cursor-pointer"
-                />
-              </div>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                className="w-full rounded-xl bg-transparent border border-white/10 px-3 py-2 hover:border-emerald-400/40 cursor-pointer"
+              />
             </FieldShell>
             <FieldShell label="Pair" icon={<ImageIcon size={16} className="text-cyan-300" />}>
               <input
                 value={pair}
                 onChange={(e) => setPair(e.target.value.toUpperCase())}
                 placeholder="AAPL / EURUSD"
-                className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none border border-white/10 hover:border-cyan-400/40"
+                className="w-full rounded-xl bg-transparent border border-white/10 px-3 py-2 hover:border-cyan-400/40"
               />
             </FieldShell>
             <FieldShell label="Entry Time" icon={<ClockIcon size={16} className="text-emerald-300" />}>
-              <div
-                className="relative w-full cursor-pointer"
-                onClick={(e) => e.currentTarget.querySelector("input")?.showPicker?.()}
-              >
-                <input
-                  type="time"
-                  value={entryTime}
-                  onChange={(e) => setEntryTime(e.target.value)}
-                  className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none border border-white/10 hover:border-emerald-400/40 cursor-pointer"
-                />
-              </div>
+              <input
+                type="time"
+                value={entryTime}
+                onChange={(e) => setEntryTime(e.target.value)}
+                className="w-full rounded-xl bg-transparent border border-white/10 px-3 py-2 hover:border-emerald-400/40 cursor-pointer"
+              />
             </FieldShell>
             <FieldShell label="Exit Time" icon={<ClockIcon size={16} className="text-emerald-300" />}>
-              <div
-                className="relative w-full cursor-pointer"
-                onClick={(e) => e.currentTarget.querySelector("input")?.showPicker?.()}
-              >
-                <input
-                  type="time"
-                  value={exitTime}
-                  onChange={(e) => setExitTime(e.target.value)}
-                  className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none border border-white/10 hover:border-emerald-400/40 cursor-pointer"
-                />
-              </div>
+              <input
+                type="time"
+                value={exitTime}
+                onChange={(e) => setExitTime(e.target.value)}
+                className="w-full rounded-xl bg-transparent border border-white/10 px-3 py-2 hover:border-emerald-400/40 cursor-pointer"
+              />
             </FieldShell>
           </div>
 
-          {/* BALANCES */}
-          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-4">
+          {/* Balances */}
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
             <FieldShell label="Balance Before ($)">
               <input
                 type="number"
                 value={balanceBefore}
                 onChange={(e) => setBalanceBefore(e.target.value)}
-                placeholder="0.00"
-                className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none border border-white/10 hover:border-emerald-400/40"
+                className="w-full rounded-xl bg-transparent border border-white/10 px-3 py-2 hover:border-emerald-400/40"
               />
             </FieldShell>
             <FieldShell label="Balance After ($)">
@@ -260,8 +273,7 @@ export default function Journal() {
                 type="number"
                 value={balanceAfter}
                 onChange={(e) => setBalanceAfter(e.target.value)}
-                placeholder="0.00"
-                className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none border border-white/10 hover:border-emerald-400/40"
+                className="w-full rounded-xl bg-transparent border border-white/10 px-3 py-2 hover:border-emerald-400/40"
               />
             </FieldShell>
             <FieldShell label="Amount Risked ($)">
@@ -269,19 +281,16 @@ export default function Journal() {
                 type="number"
                 value={amountRisked}
                 onChange={(e) => setAmountRisked(e.target.value)}
-                placeholder="0.00"
-                className="w-full rounded-xl bg-transparent px-3 py-2 text-white/90 placeholder-white/40 outline-none border border-white/10 hover:border-emerald-400/40"
+                className="w-full rounded-xl bg-transparent border border-white/10 px-3 py-2 hover:border-emerald-400/40"
               />
             </FieldShell>
             <FieldShell label="Auto R:R">
-              <div className="px-3 py-2 text-emerald-300">
-                {finalRR === "" ? "—" : finalRR}
-              </div>
+              <div className="px-3 py-2 text-emerald-300">{finalRR || "—"}</div>
             </FieldShell>
           </div>
 
-          {/* NOTES */}
-          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+          {/* Notes */}
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
             <FieldShell label="Confluences">
               <TextAreaAuto
                 value={confluences}
@@ -290,30 +299,18 @@ export default function Journal() {
               />
             </FieldShell>
             <FieldShell label="Done Right">
-              <TextAreaAuto
-                value={doneRight}
-                onChange={setDoneRight}
-                placeholder="What went well..."
-              />
+              <TextAreaAuto value={doneRight} onChange={setDoneRight} placeholder="What went well..." />
             </FieldShell>
             <FieldShell label="Done Wrong">
-              <TextAreaAuto
-                value={doneWrong}
-                onChange={setDoneWrong}
-                placeholder="What went wrong..."
-              />
+              <TextAreaAuto value={doneWrong} onChange={setDoneWrong} placeholder="What went wrong..." />
             </FieldShell>
             <FieldShell label="What to do differently">
-              <TextAreaAuto
-                value={whatToDo}
-                onChange={setWhatToDo}
-                placeholder="Improvements for next time..."
-              />
+              <TextAreaAuto value={whatToDo} onChange={setWhatToDo} placeholder="Improvements for next time..." />
             </FieldShell>
           </div>
 
-          {/* ATTACHMENTS */}
-          <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
+          {/* File Uploads */}
+          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
             <FieldShell label="Entry Chart" icon={<Upload size={16} className="text-cyan-300" />}>
               <input
                 type="file"
@@ -323,7 +320,6 @@ export default function Journal() {
               />
               {entryChartPreview && (
                 <button
-                  type="button"
                   onClick={() => setLightboxSrc(entryChartPreview)}
                   className="mt-2 inline-flex items-center gap-2 rounded-lg border border-emerald-400/20 bg-white/5 px-3 py-1.5 text-emerald-300 hover:bg-white/10"
                 >
@@ -340,7 +336,6 @@ export default function Journal() {
               />
               {htfChartPreview && (
                 <button
-                  type="button"
                   onClick={() => setLightboxSrc(htfChartPreview)}
                   className="mt-2 inline-flex items-center gap-2 rounded-lg border border-cyan-400/20 bg-white/5 px-3 py-1.5 text-cyan-300 hover:bg-white/10"
                 >
@@ -349,119 +344,94 @@ export default function Journal() {
               )}
             </FieldShell>
           </div>
-
-          {/* SAVE BUTTON */}
-          <div className="mt-6 hidden md:block">
-            <button
-              onClick={handleAddEntry}
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-500/90 px-4 py-2 font-medium text-slate-900 shadow hover:bg-emerald-400"
-            >
-              Save Trade
-            </button>
-          </div>
         </div>
 
-        {/* ----------------------------- FEED ----------------------------- */}
+        {/* Journal Feed */}
         <h2 className="mt-8 mb-3 text-lg font-semibold">Your Journal Entries</h2>
         {flatFeed.length === 0 ? (
           <p className="text-white/60">No journal entries yet.</p>
         ) : (
-          <div className="space-y-4">
-            {flatFeed.map((t) => {
-              const isWin = Number(t.pnl) >= 0;
-              return (
-                <div
-                  key={t.id}
-                  className="rounded-2xl border border-white/10 bg-[rgba(12,18,32,.6)] p-4"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-sm text-white/60">{t.date}</p>
-                      <h3 className="text-lg font-semibold">
-                        {t.ticker}{" "}
-                        <span className={isWin ? "text-emerald-400" : "text-red-400"}>
-                          {isWin ? "+" : ""}
-                          {Number(t.pnl).toFixed(2)}$
+          flatFeed.map((t) => {
+            const isWin = Number(t.pnl) >= 0;
+            return (
+              <div
+                key={t.id}
+                className="rounded-2xl border border-white/10 bg-[rgba(12,18,32,.6)] p-4 mb-3"
+              >
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="text-sm text-white/60">{t.date}</p>
+                    <h3 className="text-lg font-semibold">
+                      {t.ticker}{" "}
+                      <span className={isWin ? "text-emerald-400" : "text-red-400"}>
+                        {isWin ? "+" : ""}
+                        {Number(t.pnl).toFixed(2)}$
+                      </span>
+                      {t.amount_risked ? (
+                        <span className="ml-2 text-xs text-white/60">
+                          R:R <b>{Number(t.final_rr ?? 0).toFixed(2)}</b> (risked{" "}
+                          {Number(t.amount_risked).toFixed(2)}$)
                         </span>
-                        {t.amount_risked ? (
-                          <span className="ml-3 text-xs text-white/60">
-                            R:R <b>{Number(t.final_rr ?? 0).toFixed(2)}</b> (risked{" "}
-                            {Number(t.amount_risked).toFixed(2)}$)
-                          </span>
-                        ) : null}
-                      </h3>
-                    </div>
-                    <button
-                      className="text-red-400 hover:text-red-300 flex items-center gap-1 text-sm"
-                      onClick={() => handleDelete(t.date, t.id)}
-                    >
-                      <Trash2 size={16} /> Delete
-                    </button>
+                      ) : null}
+                    </h3>
                   </div>
+                  <button
+                    className="text-red-400 hover:text-red-300 text-sm flex gap-1 items-center"
+                    onClick={() => handleDelete(t.date, t.id)}
+                  >
+                    <Trash2 size={16} /> Delete
+                  </button>
+                </div>
 
-                  {(t.confluences ||
-                    t.done_right ||
-                    t.done_wrong ||
-                    t.what_to_improve ||
-                    t.what_to_do ||
-                    t.whatToDo) && (
-                    <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
-                      {t.confluences && <FeedBlock title="Confluences" text={t.confluences} />}
-                      {t.done_right && <FeedBlock title="Done Right" text={t.done_right} />}
-                      {t.done_wrong && <FeedBlock title="Done Wrong" text={t.done_wrong} />}
-                      {(t.what_to_improve || t.what_to_do || t.whatToDo) && (
-                        <FeedBlock
-                          title="What to do differently"
-                          text={t.what_to_improve || t.what_to_do || t.whatToDo}
-                        />
-                      )}
-                    </div>
-                  )}
-
-                  {(t.entry_chart || t.htf_chart) && (
-                    <div className="mt-3 flex flex-wrap items-center gap-3">
-                      {t.entry_chart && (
-                        <button
-                          type="button"
-                          onClick={() => setLightboxSrc(t.entry_chart)}
-                          className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/20 bg-white/5 px-3 py-1.5 text-emerald-300 hover:bg-white/10"
-                        >
-                          <ImageIcon size={16} /> Entry Chart <ExternalLink size={14} />
-                        </button>
-                      )}
-                      {t.htf_chart && (
-                        <button
-                          type="button"
-                          onClick={() => setLightboxSrc(t.htf_chart)}
-                          className="inline-flex items-center gap-2 rounded-lg border border-cyan-400/20 bg-white/5 px-3 py-1.5 text-cyan-300 hover:bg-white/10"
-                        >
-                          <ImageIcon size={16} /> HTF Chart <ExternalLink size={14} />
-                        </button>
-                      )}
-                    </div>
+                <div className="mt-3 grid md:grid-cols-2 gap-3">
+                  {t.confluences && <FeedBlock title="Confluences" text={t.confluences} />}
+                  {t.done_right && <FeedBlock title="Done Right" text={t.done_right} />}
+                  {t.done_wrong && <FeedBlock title="Done Wrong" text={t.done_wrong} />}
+                  {t.what_to_improve && (
+                    <FeedBlock title="What to Improve" text={t.what_to_improve} />
                   )}
                 </div>
-              );
-            })}
-          </div>
+
+                {(t.entry_chart || t.htf_chart) && (
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    {t.entry_chart && (
+                      <button
+                        onClick={() => setLightboxSrc(t.entry_chart)}
+                        className="inline-flex items-center gap-2 rounded-lg border border-emerald-400/20 bg-white/5 px-3 py-1.5 text-emerald-300 hover:bg-white/10"
+                      >
+                        <ImageIcon size={16} /> Entry Chart <ExternalLink size={14} />
+                      </button>
+                    )}
+                    {t.htf_chart && (
+                      <button
+                        onClick={() => setLightboxSrc(t.htf_chart)}
+                        className="inline-flex items-center gap-2 rounded-lg border border-cyan-400/20 bg-white/5 px-3 py-1.5 text-cyan-300 hover:bg-white/10"
+                      >
+                        <ImageIcon size={16} /> HTF Chart <ExternalLink size={14} />
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
       </div>
 
-      {/* Lightbox */}
-      <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
-
-      {/* Floating Save (Mobile) */}
+      {/* Floating Save Button for Mobile */}
       <button
         onClick={handleAddEntry}
         className="fixed bottom-6 right-6 z-40 flex items-center gap-2 rounded-full bg-emerald-500/90 px-5 py-3 text-slate-900 shadow-lg hover:bg-emerald-400 md:hidden transition-all duration-200"
       >
         <Save size={18} /> Save
       </button>
+
+      <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
   );
 }
 
-/* ------------------------- tiny feed block component ----------------------- */
+/* ------------------------- Feed Block Component ----------------------- */
 function FeedBlock({ title, text }) {
   return (
     <div className="rounded-xl border border-white/10 p-3">
