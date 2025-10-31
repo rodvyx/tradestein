@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect, useState, useRef } from "react";
+import React, { useMemo, useEffect, useState, useRef, Suspense } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Quote, Plus, ChevronDown, CheckCircle } from "lucide-react";
@@ -18,15 +18,6 @@ export default function Dashboard() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // ✅ Show banner if user came from /subscribed
-  useEffect(() => {
-    if (location.state?.showRenewalBanner) {
-      setShowBanner(true);
-      setTimeout(() => setShowBanner(false), 4000);
-      window.history.replaceState({}, document.title);
-    }
-  }, [location]);
-
   // ✅ Fetch current user
   useEffect(() => {
     const fetchUser = async () => {
@@ -35,6 +26,15 @@ export default function Dashboard() {
     };
     fetchUser();
   }, []);
+
+  // ✅ Handle banner if user came from /subscribe
+  useEffect(() => {
+    if (location.state?.showRenewalBanner) {
+      setShowBanner(true);
+      setTimeout(() => setShowBanner(false), 4000);
+      window.history.replaceState({}, document.title);
+    }
+  }, [location]);
 
   // ✅ Check subscription on load
   useEffect(() => {
@@ -54,6 +54,8 @@ export default function Dashboard() {
 
       if (data?.subscription_status === "active") {
         setLoading(false);
+
+        // Recently renewed banner
         const recentlyRenewed = sessionStorage.getItem("recentlyRenewed");
         const updatedAt = new Date(data?.updated_at || new Date());
         const hoursSinceUpdate =
@@ -66,11 +68,12 @@ export default function Dashboard() {
         }
       } else if (data?.subscription_status === "cancelled") {
         setRedirecting(true);
-        setTimeout(() => (window.location.href = "/cancelled"), 1500);
+        setTimeout(() => navigate("/cancelled", { replace: true }), 1500);
       }
     }
+
     checkSubscriptionStatus();
-  }, [user]);
+  }, [user, navigate]);
 
   // ✅ Real-time subscription updates
   useEffect(() => {
@@ -92,21 +95,21 @@ export default function Dashboard() {
           if (newStatus === "active") {
             sessionStorage.setItem("recentlyRenewed", "true");
             setRedirecting(true);
-            setTimeout(() => (window.location.href = "/renewed"), 1500);
+            setTimeout(() => navigate("/renewed", { replace: true }), 1500);
           } else if (newStatus !== "active") {
             setRedirecting(true);
-            setTimeout(() => (window.location.href = "/cancelled"), 1500);
+            setTimeout(() => navigate("/cancelled", { replace: true }), 1500);
           }
         }
       )
       .subscribe();
     return () => supabase.removeChannel(channel);
-  }, [user]);
+  }, [user, navigate]);
 
   if (redirecting) return <NeonLoader text="Checking subscription..." />;
   if (loading) return <NeonLoader text="Loading dashboard..." />;
 
-  // ─── Metrics + Data ──────────────────────
+  // ─── Metrics ─────────────────────
   const flatTrades = useMemo(() => {
     if (!trades) return [];
     return Object.values(trades).flat();
@@ -120,6 +123,7 @@ export default function Dashboard() {
     (totalTrades || 1);
   const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
 
+  // ─── Daily snapshot ─────────────────────
   const today = new Date().toISOString().split("T")[0];
   const todayTrades = flatTrades.filter((t) => t.date === today);
   const todayPL = todayTrades.reduce((s, t) => s + (Number(t.pnl) || 0), 0);
@@ -131,11 +135,12 @@ export default function Dashboard() {
       ? "New York"
       : "Asia";
 
+  // ─── Psychology ─────────────────────
   const lastTrade = flatTrades[flatTrades.length - 1];
   const lastEmotion = lastTrade?.emotions || "😊 Calm / Focused";
   const discipline = lastTrade ? "✅" : "—";
 
-  // ─── Dropdown logic ──────────────────────
+  // ─── Dropdown logic ─────────────────────
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   useEffect(() => {
@@ -240,73 +245,79 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ─── Main content ───────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <Metric title="Total Profit" value={`$${totalProfit.toFixed(2)}`} />
-        <Metric title="Win Rate" value={`${winRate.toFixed(1)}%`}>
-          <WinRateRing percentage={winRate} />
-        </Metric>
-        <Metric title="Avg R:R" value={avgRR.toFixed(2)} />
-        <Metric title="Total Trades" value={totalTrades} />
-      </div>
+      {/* MAIN CONTENT */}
+      <Suspense fallback={<NeonLoader text="Loading dashboard components..." />}>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <Metric title="Total Profit" value={`$${totalProfit.toFixed(2)}`} />
+          <Metric title="Win Rate" value={`${winRate.toFixed(1)}%`}>
+            <WinRateRing percentage={winRate} />
+          </Metric>
+          <Metric title="Avg R:R" value={avgRR.toFixed(2)} />
+          <Metric title="Total Trades" value={totalTrades} />
+        </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-        <Card className="lg:col-span-2">
-          <CumulativeGraph trades={flatTrades} />
-        </Card>
-        <Card>
-          <RecentTradesModern trades={flatTrades} />
-        </Card>
-      </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          <Card className="lg:col-span-2">
+            <CumulativeGraph trades={flatTrades} />
+          </Card>
+          <Card>
+            <RecentTradesModern trades={flatTrades} />
+          </Card>
+        </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-auto">
-        <Card>
-          <h2 className="text-lg font-semibold mb-3 text-gray-300">
-            Daily Snapshot
-          </h2>
-          <div className="space-y-2 text-sm">
-            <p>
-              Today’s P/L:{" "}
-              <span
-                className={`font-semibold ${
-                  todayPL >= 0 ? "text-emerald-400" : "text-red-400"
-                }`}
-              >
-                {todayPL >= 0 ? "+" : ""}${todayPL.toFixed(2)}
-              </span>
-            </p>
-            <p>Trades Today: {todayTrades.length}</p>
-            <p>Session: {session}</p>
-          </div>
-        </Card>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-auto">
+          <Card>
+            <h2 className="text-lg font-semibold mb-3 text-gray-300">
+              Daily Snapshot
+            </h2>
+            <div className="space-y-2 text-sm">
+              <p>
+                Today’s P/L:{" "}
+                <span
+                  className={`font-semibold ${
+                    todayPL >= 0 ? "text-emerald-400" : "text-red-400"
+                  }`}
+                >
+                  {todayPL >= 0 ? "+" : ""}${todayPL.toFixed(2)}
+                </span>
+              </p>
+              <p>Trades Today: {todayTrades.length}</p>
+              <p>Session: {session}</p>
+            </div>
+          </Card>
 
-        <Card>
-          <h2 className="text-lg font-semibold mb-3 text-gray-300">
-            Psychology
-          </h2>
-          <div className="space-y-2 text-sm">
-            <p>
-              Last Trade Emotion:{" "}
-              <span className="text-yellow-400 font-medium">{lastEmotion}</span>
-            </p>
-            <p>
-              Discipline:{" "}
-              <span className="text-emerald-400 font-medium">{discipline}</span>
-            </p>
-          </div>
-        </Card>
+          <Card>
+            <h2 className="text-lg font-semibold mb-3 text-gray-300">
+              Psychology
+            </h2>
+            <div className="space-y-2 text-sm">
+              <p>
+                Last Trade Emotion:{" "}
+                <span className="text-yellow-400 font-medium">
+                  {lastEmotion}
+                </span>
+              </p>
+              <p>
+                Discipline:{" "}
+                <span className="text-emerald-400 font-medium">
+                  {discipline}
+                </span>
+              </p>
+            </div>
+          </Card>
 
-        <motion.div
-          whileHover={{ scale: 1.02 }}
-          className="glass-card rounded-2xl p-5 flex items-center justify-between border border-emerald-400/20"
-        >
-          <div className="flex items-center gap-3">
-            <Quote className="text-emerald-400 w-5 h-5" />
-            <p className="italic text-gray-200 text-sm">{quote}</p>
-          </div>
-          <p className="text-emerald-500 font-bold text-xl">★</p>
-        </motion.div>
-      </div>
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            className="glass-card rounded-2xl p-5 flex items-center justify-between border border-emerald-400/20"
+          >
+            <div className="flex items-center gap-3">
+              <Quote className="text-emerald-400 w-5 h-5" />
+              <p className="italic text-gray-200 text-sm">{quote}</p>
+            </div>
+            <p className="text-emerald-500 font-bold text-xl">★</p>
+          </motion.div>
+        </div>
+      </Suspense>
 
       {/* Floating Add Button */}
       <AnimatePresence>
@@ -416,8 +427,6 @@ const WinRateRing = ({ percentage }) => {
             strokeDasharray={circumference}
             strokeDashoffset={offset}
             strokeLinecap="round"
-            initial={{ strokeDashoffset: circumference }}
-            animate={{ strokeDashoffset: offset }}
             transition={{ duration: 1.4, ease: "easeOut" }}
           />
           <text
