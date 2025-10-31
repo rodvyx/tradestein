@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Routes, Route, Navigate, useLocation, useNavigate, Outlet } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { supabase } from "./lib/supabaseClient";
 
+// Pages
 import Auth from "./pages/Auth";
 import Analytics from "./pages/Analytics";
 import Calendar from "./pages/Calendar";
@@ -10,15 +11,20 @@ import Journal from "./pages/Journal";
 import Dashboard from "./components/dashboard2/Dashboard";
 import Settings from "./pages/Settings";
 import Profile from "./pages/Profile";
-import Replay from "./pages/Replay";
 import ResetPassword from "./pages/ResetPassword";
 import Verified from "./pages/Verified";
 import Landing from "./pages/Landing";
+import Goals from "./pages/Goals";
+import Cancelled from "./pages/Cancelled";
+import Subscribe from "./pages/Subscribe";
+import Renewed from "./pages/Renewed";
 
+// Layout + UI
 import BottomNav from "./components/Layout/BottomNav";
 import AnimatedPageWrapper from "./components/Layout/AnimatedPageWrapper";
 import { useAuth } from "./lib/useAuth";
 import NeonLoader from "./components/ui/NeonLoader";
+import RequireSubscription from "./components/RequireSubscription";
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -120,7 +126,7 @@ export default function App() {
   // ✅ Loader while checking auth
   if (loading) return <NeonLoader text="Checking authentication..." />;
 
-  // ✅ Landing screen (smooth fade into Auth)
+  // ✅ Landing screen
   if (showLanding) {
     return (
       <div className="min-h-screen bg-[#0A0A0B] flex items-center justify-center overflow-hidden">
@@ -168,18 +174,27 @@ export default function App() {
             <Route path="/auth" element={<Auth />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/verified" element={<Verified />} />
+            <Route path="/subscribe" element={<Subscribe />} />
+            <Route path="/cancelled" element={<Cancelled />} />
+            <Route path="/renewed" element={<Renewed />} />
 
             {/* Protected routes */}
             {user && (
-              <>
+              <Route
+                element={
+                  <RequireSubscription user={user}>
+                    <Outlet />
+                  </RequireSubscription>
+                }
+              >
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/calendar" element={<Calendar />} />
                 <Route path="/journal" element={<Journal />} />
-                <Route path="/replay" element={<Replay />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/profile" element={<Profile />} />
-              </>
+                <Route path="/goals" element={<Goals />} />
+              </Route>
             )}
 
             {/* Fallback */}
@@ -198,7 +213,9 @@ export default function App() {
       {/* ✅ Bottom nav */}
       {user &&
         !recoveryMode &&
-        !["/auth", "/verified", "/reset-password"].includes(location.pathname) && <BottomNav />}
+        !["/auth", "/verified", "/reset-password", "/cancelled", "/subscribe"].includes(
+          location.pathname
+        ) && <BottomNav />}
     </div>
   );
 }

@@ -1,30 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "../lib/supabaseClient";
-import {
-  Trophy,
-  TrendingUp,
-  TrendingDown,
-  Star,
-  User,
-  Calendar,
-  Activity,
-} from "lucide-react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import { User, X } from "lucide-react";
 
 export default function Profile() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState({});
-  const [stats, setStats] = useState({ total: 0, wins: 0, rr: 0 });
-  const [equityData, setEquityData] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [streakDays, setStreakDays] = useState(6);
+  const [maxStreak, setMaxStreak] = useState(7);
+  const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -39,186 +23,104 @@ export default function Profile() {
         .single();
 
       setProfile(profileData || {});
-
-      const { data: trades } = await supabase
-        .from("trades")
-        .select("*")
-        .eq("user_id", auth.user.id);
-
-      if (trades && trades.length > 0) {
-        const total = trades.length;
-        const wins = trades.filter((t) => Number(t.pnl) > 0).length;
-        const rrSum = trades.reduce(
-          (a, t) => a + (Number(t.final_rr) || 0),
-          0
-        );
-        const rr = (rrSum / total).toFixed(2);
-
-        const cumulative = [];
-        let balance = 0;
-        trades
-          .sort((a, b) => new Date(a.date) - new Date(b.date))
-          .forEach((t) => {
-            balance += Number(t.pnl) || 0;
-            cumulative.push({ date: t.date, equity: balance });
-          });
-
-        setStats({ total, wins, rr });
-        setEquityData(cumulative);
-      }
-      setLoading(false);
     };
     fetchData();
   }, []);
 
-  const winRate =
-    stats.total > 0 ? ((stats.wins / stats.total) * 100).toFixed(1) : 0;
-
-  if (loading)
-    return (
-      <div className="flex items-center justify-center h-screen text-gray-400">
-        Loading profile...
-      </div>
-    );
-
   return (
     <div className="relative min-h-screen bg-[#0A0A0B] text-white flex flex-col items-center justify-start pt-12 overflow-hidden">
-      {/* ambient particles */}
-      <div className="absolute inset-0 pointer-events-none">
-        {[...Array(40)].map((_, i) => (
-          <motion.div
-            key={i}
-            className="absolute w-1 h-1 bg-emerald-400/30 rounded-full"
-            initial={{ opacity: 0, y: 0 }}
-            animate={{
-              opacity: [0, 1, 0],
-              y: [0, -100],
-              x: Math.sin(i) * 50,
-            }}
-            transition={{
-              duration: 8 + i * 0.4,
-              repeat: Infinity,
-              delay: i * 0.3,
-            }}
-            style={{
-              top: `${Math.random() * 100}%`,
-              left: `${Math.random() * 100}%`,
-            }}
-          />
-        ))}
-      </div>
-
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6 }}
-        className="z-10 w-full max-w-3xl bg-[#0D1117]/70 border border-white/10 backdrop-blur-xl rounded-3xl p-8 shadow-[0_0_40px_rgba(16,185,129,0.15)]"
+        className="z-10 w-full max-w-md bg-[#0D1117]/70 border border-white/10 backdrop-blur-xl rounded-3xl p-8 shadow-[0_0_40px_rgba(16,185,129,0.15)]"
       >
-        {/* Profile Header */}
         <div className="flex flex-col items-center text-center">
-          <div className="relative">
-            <div className="h-28 w-28 rounded-full bg-gradient-to-br from-emerald-500/40 to-emerald-700/20 flex items-center justify-center shadow-lg ring-2 ring-emerald-500/40">
-              {profile?.avatar_url ? (
-                <img
-                  src={profile.avatar_url}
-                  alt="avatar"
-                  className="rounded-full h-28 w-28 object-cover"
-                />
-              ) : (
-                <User size={50} className="text-emerald-400" />
-              )}
-            </div>
+          <div className="h-24 w-24 rounded-full bg-gradient-to-br from-emerald-500/30 to-emerald-700/20 flex items-center justify-center ring-2 ring-emerald-500/40">
+            {profile?.avatar_url ? (
+              <img
+                src={profile.avatar_url}
+                alt="avatar"
+                className="rounded-full h-24 w-24 object-cover"
+              />
+            ) : (
+              <User size={40} className="text-emerald-400" />
+            )}
           </div>
           <h2 className="text-2xl font-bold mt-4 text-emerald-400">
             {profile.username || "Trader"}
           </h2>
           <p className="text-gray-400 text-sm mt-1">
-            {profile.bio || "Focused on consistency and growth 📈"}
-          </p>
-          <p className="text-xs text-gray-500 mt-1">
-            Joined{" "}
-            {new Date(profile.created_at || Date.now()).toDateString()}
+            {profile.bio || "Focused and growing 📈"}
           </p>
         </div>
 
-        {/* Stats Section */}
-        <div className="grid grid-cols-3 gap-4 text-center mt-8">
-          <StatCard
-            icon={<Trophy className="text-yellow-400" size={22} />}
-            label="Win Rate"
-            value={`${winRate}%`}
-          />
-          <StatCard
-            icon={
-              Number(stats.rr) >= 1 ? (
-                <TrendingUp className="text-emerald-400" size={22} />
-              ) : (
-                <TrendingDown className="text-red-400" size={22} />
-              )
-            }
-            label="Avg R:R"
-            value={stats.rr}
-          />
-          <StatCard
-            icon={<Star className="text-cyan-400" size={22} />}
-            label="Total Trades"
-            value={stats.total}
-          />
-        </div>
-
-        {/* Equity Curve */}
-        <div className="mt-10">
-          <h3 className="text-lg font-semibold mb-3 text-emerald-400">
-            Equity Curve
-          </h3>
-          <div className="bg-black/40 p-3 rounded-xl border border-white/10">
-            {equityData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={equityData}>
-                  <XAxis dataKey="date" hide />
-                  <YAxis hide />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "rgba(17,17,17,0.8)",
-                      border: "none",
-                      borderRadius: "8px",
-                    }}
-                    labelStyle={{ color: "#10b981" }}
-                    formatter={(value) => [`$${value}`, "Equity"]}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="equity"
-                    stroke="#10b981"
-                    strokeWidth={2}
-                    dot={false}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <p className="text-gray-500 text-sm text-center py-10">
-                No trade history yet.
-              </p>
-            )}
+        <div className="mt-8 bg-[#10151C]/70 p-5 rounded-2xl border border-white/10 text-center">
+          <h3 className="text-gray-300 font-semibold mb-2">Daily Streak</h3>
+          <div className="flex justify-center gap-3 mb-3">
+            <StatCard label="Current Streak" value={`${streakDays} Days`} />
+            <StatCard label="Max Streak" value={`${maxStreak} Days`} />
           </div>
+          <button
+            onClick={() => setShowModal(true)}
+            className="text-emerald-400 text-sm hover:underline"
+          >
+            See More
+          </button>
         </div>
       </motion.div>
+
+      <AnimatePresence>
+        {showModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9 }}
+              animate={{ scale: 1 }}
+              exit={{ scale: 0.9 }}
+              className="bg-[#0D1117]/90 border border-white/10 rounded-3xl p-6 max-w-md w-full relative shadow-[0_0_40px_rgba(16,185,129,0.2)]"
+            >
+              <button
+                onClick={() => setShowModal(false)}
+                className="absolute top-4 right-4 text-gray-400 hover:text-white"
+              >
+                <X size={20} />
+              </button>
+
+              <h2 className="text-xl font-semibold text-emerald-400 mb-3">
+                Your Current Streak is {streakDays} Days
+              </h2>
+
+              <div className="grid grid-cols-7 gap-1">
+                {[...Array(30)].map((_, i) => (
+                  <div
+                    key={i}
+                    className={`w-6 h-6 rounded-full ${
+                      i < streakDays ? "bg-emerald-400/80" : "bg-white/10"
+                    }`}
+                  />
+                ))}
+              </div>
+
+              <p className="text-gray-400 text-xs text-center mt-4">
+                Keep your consistency strong — every trade counts 🔥
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
 
-function StatCard({ icon, label, value }) {
+function StatCard({ label, value }) {
   return (
-    <motion.div
-      className="bg-[#10151C]/70 border border-white/10 rounded-xl p-4 backdrop-blur-sm shadow-[0_0_15px_rgba(16,185,129,0.05)]"
-      whileHover={{ scale: 1.05 }}
-      transition={{ type: "spring", stiffness: 200 }}
-    >
-      <div className="flex flex-col items-center justify-center">
-        {icon}
-        <p className="text-gray-400 text-sm mt-2">{label}</p>
-        <p className="text-lg font-bold mt-1 text-white">{value}</p>
-      </div>
-    </motion.div>
+    <div className="bg-[#10151C] px-3 py-2 rounded-xl border border-white/10">
+      <p className="text-sm text-gray-400">{label}</p>
+      <p className="font-semibold text-white">{value}</p>
+    </div>
   );
 }

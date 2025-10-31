@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import { motion } from "framer-motion";
-import { LogOut, Camera } from "lucide-react";
+import { LogOut, Camera, CreditCard } from "lucide-react";
 import DataBackup from "../components/DataBackup";
 import { useToast } from "../components/ui/ToastProvider";
 
@@ -11,7 +11,7 @@ export default function Settings() {
   const [bio, setBio] = useState("");
   const [avatarUrl, setAvatarUrl] = useState("");
   const [saving, setSaving] = useState(false);
-  const { showToast } = useToast(); // ✅ Global toast hook
+  const { showToast } = useToast();
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -67,9 +67,12 @@ export default function Settings() {
     window.location.href = "/auth";
   };
 
+  const handleManageSubscription = () => {
+    window.open("https://tradestein.lemonsqueezy.com/billing", "_blank");
+  };
+
   return (
     <div className="relative min-h-screen bg-[#0B0C10] text-white flex flex-col items-center justify-center overflow-hidden">
-      {/* Floating Background Particles */}
       <div className="absolute inset-0 pointer-events-none">
         {[...Array(30)].map((_, i) => (
           <motion.div
@@ -94,7 +97,6 @@ export default function Settings() {
         ))}
       </div>
 
-      {/* Settings Card */}
       <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
@@ -146,7 +148,22 @@ export default function Settings() {
             />
           </div>
 
-          <div className="flex justify-between items-center pt-4">
+          {/* Plans & Access Section */}
+          <div className="mt-6 border-t border-white/10 pt-6">
+            <h2 className="text-lg font-semibold text-emerald-400 mb-3">
+              Plans & Access
+            </h2>
+            <button
+              onClick={handleManageSubscription}
+              className="flex items-center justify-center gap-2 bg-emerald-500/90 hover:bg-emerald-400 text-slate-900 font-semibold px-5 py-2.5 rounded-xl shadow-md transition-all w-full"
+            >
+              <CreditCard size={18} />
+              Manage Subscription
+            </button>
+          </div>
+
+          {/* Save / Logout */}
+          <div className="flex justify-between items-center pt-6">
             <button
               onClick={handleSave}
               disabled={saving}
@@ -165,7 +182,6 @@ export default function Settings() {
         </div>
       </motion.div>
 
-      {/* Export / Import Section */}
       {user && <DataBackup userId={user.id} />}
     </div>
   );

@@ -5,6 +5,7 @@ import dayjs from "dayjs";
 /**
  * Handles trades syncing with Supabase.
  * Keeps local and remote states unified and reacts to real-time DB changes.
+ * Now also tracks user streaks automatically.
  */
 export function useSupabaseTrades(userId) {
   const [trades, setTrades] = useState({});
@@ -62,12 +63,12 @@ export function useSupabaseTrades(userId) {
 
   /**
    * Save a new trade to Supabase
+   * ✅ Also triggers automatic streak update after saving
    */
   const saveTrade = async (trade) => {
     if (!userId) return;
     setSyncStatus("syncing");
 
-    // ✅ Clean and match DB schema exactly
     const newTrade = {
       user_id: userId,
       date: trade.date || dayjs().format("YYYY-MM-DD"),
@@ -82,8 +83,8 @@ export function useSupabaseTrades(userId) {
       what_to_improve: trade.what_to_do || trade.note || null,
       entry_chart: trade.entry_chart || null,
       htf_chart: trade.htf_chart || null,
-      emotions: null, // optional, reserved for later
-      screenshot_url: null, // optional, reserved for later
+      emotions: trade.emotions || null,
+      screenshot_url: trade.screenshot_url || null,
       created_at: dayjs().toISOString(),
     };
 
@@ -93,8 +94,59 @@ export function useSupabaseTrades(userId) {
       console.error("Supabase insert error:", error);
       setSyncStatus("error");
     } else {
+      await updateUserStreak(userId);
       setSyncStatus("synced");
       setTimeout(() => setSyncStatus("idle"), 1000);
+    }
+  };
+
+  /**
+   * ✅ Calculates and updates streaks based on user trade activity.
+   */
+  const updateUserStreak = async (userId) => {
+    const { data: tradesData, error } = await supabase
+      .from("trades")
+      .select("date")
+      .eq("user_id", userId)
+      .order("date", { ascending: true });
+
+    if (error || !tradesData) {
+      console.error("Error fetching trades for streak:", error);
+      return;
+    }
+
+    const uniqueDates = [...new Set(tradesData.map((t) => t.date))].sort();
+    if (uniqueDates.length === 0) return;
+
+    let currentStreak = 1;
+    let maxStreak = 1;
+
+    for (let i = 1; i < uniqueDates.length; i++) {
+      const prev = dayjs(uniqueDates[i - 1]);
+      const curr = dayjs(uniqueDates[i]);
+      const diff = curr.diff(prev, "day");
+      if (diff === 1) {
+        currentStreak++;
+        maxStreak = Math.max(maxStreak, currentStreak);
+      } else if (diff > 1) {
+        currentStreak = 1;
+      }
+    }
+
+    // ✅ Update streak data in profile
+    const { error: updateError } = await supabase
+      .from("profiles")
+      .update({
+        current_streak: currentStreak,
+        max_streak: maxStreak,
+        updated_at: new Date(),
+      })
+      .eq("id", userId);
+
+    if (updateError) {
+      console.error("Error updating streaks:", updateError);
+    } else {
+      console.log("🔥 Updated streaks:", { currentStreak, maxStreak });
     }
   };
 

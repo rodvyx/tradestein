@@ -6,10 +6,10 @@ export default function AddTradeModal({ open, onClose, onSave }) {
   const [ticker, setTicker] = useState("");
   const [pnl, setPnl] = useState("");
   const [finalRR, setFinalRR] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    // defaults
     setDate(new Date().toISOString().split("T")[0]);
     setTicker("");
     setPnl("");
@@ -18,12 +18,17 @@ export default function AddTradeModal({ open, onClose, onSave }) {
 
   const handleSave = async () => {
     if (!date || !ticker) return alert("Date and Ticker are required.");
+    setSaving(true);
+
     await onSave({
       date,
       ticker: ticker.toUpperCase(),
       pnl: Number(pnl || 0),
       final_rr: finalRR === "" ? null : Number(finalRR),
     });
+
+    setSaving(false);
+    alert("✅ Trade saved! Streak updated.");
   };
 
   return (
@@ -36,10 +41,7 @@ export default function AddTradeModal({ open, onClose, onSave }) {
           exit={{ opacity: 0 }}
         >
           {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/60"
-            onClick={onClose}
-          ></div>
+          <div className="absolute inset-0 bg-black/60" onClick={onClose}></div>
 
           {/* Modal */}
           <motion.div
@@ -99,13 +101,14 @@ export default function AddTradeModal({ open, onClose, onSave }) {
               </button>
               <button
                 onClick={handleSave}
-                className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-black font-semibold"
+                disabled={saving}
+                className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-black font-semibold disabled:opacity-60"
               >
-                Save Trade
+                {saving ? "Saving..." : "Save Trade"}
               </button>
             </div>
           </motion.div>
-      </motion.div>
+        </motion.div>
       )}
     </AnimatePresence>
   );

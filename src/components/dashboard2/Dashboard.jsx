@@ -1,17 +1,33 @@
 import React, { useMemo, useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Quote, Plus, ChevronDown } from "lucide-react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
+import { Quote, Plus, ChevronDown, CheckCircle } from "lucide-react";
 import { supabase } from "../../lib/supabaseClient";
 import { useSupabaseTrades } from "../../lib/useSupabaseTrades";
 import CumulativeGraph from "./CumulativeGraph";
 import RecentTradesModern from "./RecentTradesModern";
 import AddTradeModal from "./AddTradeModal";
+import NeonLoader from "../ui/NeonLoader";
 
 export default function Dashboard() {
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [redirecting, setRedirecting] = useState(false);
+  const [showBanner, setShowBanner] = useState(false);
   const { trades, syncStatus, saveTrade } = useSupabaseTrades(user?.id);
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  // fetch current user
+  // ✅ Show banner if user came from /subscribed
+  useEffect(() => {
+    if (location.state?.showRenewalBanner) {
+      setShowBanner(true);
+      setTimeout(() => setShowBanner(false), 4000);
+      window.history.replaceState({}, document.title);
+    }
+  }, [location]);
+
+  // ✅ Fetch current user
   useEffect(() => {
     const fetchUser = async () => {
       const { data } = await supabase.auth.getUser();
@@ -20,13 +36,82 @@ export default function Dashboard() {
     fetchUser();
   }, []);
 
-  // flatten grouped trades for dashboard calcs
+  // ✅ Check subscription on load
+  useEffect(() => {
+    async function checkSubscriptionStatus() {
+      if (!user) return;
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("subscription_status, updated_at")
+        .eq("email", user.email)
+        .single();
+
+      if (error) {
+        console.error("Error checking subscription:", error);
+        return;
+      }
+
+      if (data?.subscription_status === "active") {
+        setLoading(false);
+        const recentlyRenewed = sessionStorage.getItem("recentlyRenewed");
+        const updatedAt = new Date(data?.updated_at || new Date());
+        const hoursSinceUpdate =
+          (Date.now() - updatedAt.getTime()) / (1000 * 60 * 60);
+
+        if (recentlyRenewed === "true" || hoursSinceUpdate < 24) {
+          setShowBanner(true);
+          sessionStorage.removeItem("recentlyRenewed");
+          setTimeout(() => setShowBanner(false), 4000);
+        }
+      } else if (data?.subscription_status === "cancelled") {
+        setRedirecting(true);
+        setTimeout(() => (window.location.href = "/cancelled"), 1500);
+      }
+    }
+    checkSubscriptionStatus();
+  }, [user]);
+
+  // ✅ Real-time subscription updates
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel("realtime:profiles")
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+          filter: `email=eq.${user.email}`,
+        },
+        (payload) => {
+          const newStatus = payload.new.subscription_status;
+          console.log("🔔 Subscription update:", newStatus);
+
+          if (newStatus === "active") {
+            sessionStorage.setItem("recentlyRenewed", "true");
+            setRedirecting(true);
+            setTimeout(() => (window.location.href = "/renewed"), 1500);
+          } else if (newStatus !== "active") {
+            setRedirecting(true);
+            setTimeout(() => (window.location.href = "/cancelled"), 1500);
+          }
+        }
+      )
+      .subscribe();
+    return () => supabase.removeChannel(channel);
+  }, [user]);
+
+  if (redirecting) return <NeonLoader text="Checking subscription..." />;
+  if (loading) return <NeonLoader text="Loading dashboard..." />;
+
+  // ─── Metrics + Data ──────────────────────
   const flatTrades = useMemo(() => {
     if (!trades) return [];
     return Object.values(trades).flat();
   }, [trades]);
 
-  // ── METRICS ───────────────────────────────────────────────────────────────
   const totalProfit = flatTrades.reduce((s, t) => s + (Number(t.pnl) || 0), 0);
   const totalTrades = flatTrades.length;
   const winningTrades = flatTrades.filter((t) => Number(t.pnl) > 0).length;
@@ -35,7 +120,6 @@ export default function Dashboard() {
     (totalTrades || 1);
   const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
 
-  // ── DAILY SNAPSHOT ────────────────────────────────────────────────────────
   const today = new Date().toISOString().split("T")[0];
   const todayTrades = flatTrades.filter((t) => t.date === today);
   const todayPL = todayTrades.reduce((s, t) => s + (Number(t.pnl) || 0), 0);
@@ -47,12 +131,11 @@ export default function Dashboard() {
       ? "New York"
       : "Asia";
 
-  // ── PSYCHOLOGY (placeholder until we track emotion in Journal) ───────────
   const lastTrade = flatTrades[flatTrades.length - 1];
   const lastEmotion = lastTrade?.emotions || "😊 Calm / Focused";
   const discipline = lastTrade ? "✅" : "—";
 
-  // ── Avatar dropdown (Logout inside) ───────────────────────────────────────
+  // ─── Dropdown logic ──────────────────────
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
   useEffect(() => {
@@ -64,15 +147,15 @@ export default function Dashboard() {
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    window.location.reload();
+    navigate("/auth", { replace: true });
   };
 
-  // ── Add Trade Modal ───────────────────────────────────────────────────────
+  // ─── Add Trade Modal ─────────────────────
   const [showAdd, setShowAdd] = useState(false);
 
-  // ── Motivational quotes ───────────────────────────────────────────────────
   const quotes = [
     "Stay consistent, not perfect.",
     "Discipline is your true edge.",
@@ -83,10 +166,28 @@ export default function Dashboard() {
 
   return (
     <div className="relative min-h-screen bg-[#0A0A0B] text-white p-6 flex flex-col overflow-hidden">
+      {/* ✅ ACCESS RESTORED BANNER */}
+      <AnimatePresence>
+        {showBanner && (
+          <motion.div
+            initial={{ y: -50, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -50, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 200, damping: 18 }}
+            className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-emerald-500/90 text-slate-900 font-semibold px-6 py-2 rounded-full shadow-[0_0_25px_rgba(16,185,129,0.45)] z-[100]"
+          >
+            <div className="flex items-center gap-2">
+              <CheckCircle size={18} />
+              🎉 Pro Access Restored — Welcome back!
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* HEADER */}
       <div className="flex flex-wrap items-center justify-between mb-6">
         <h1 className="text-3xl font-bold text-emerald-400 drop-shadow">
-          Tradestein 
+          Tradestein
         </h1>
 
         <div className="flex items-center gap-4">
@@ -121,12 +222,12 @@ export default function Dashboard() {
                     exit={{ opacity: 0, y: -6 }}
                     className="absolute right-0 mt-2 w-44 glass-card rounded-xl border border-neutral-800 overflow-hidden z-20"
                   >
-                    <ItemBtn onClick={() => (window.location.href = "/profile")}>
-                      View Profile
-                    </ItemBtn>
-                    <ItemBtn onClick={() => (window.location.href = "/settings")}>
-                      Settings
-                    </ItemBtn>
+                    <Link to="/profile" onClick={() => setMenuOpen(false)}>
+                      <ItemBtn>View Profile</ItemBtn>
+                    </Link>
+                    <Link to="/settings" onClick={() => setMenuOpen(false)}>
+                      <ItemBtn>Settings</ItemBtn>
+                    </Link>
                     <div className="h-px bg-white/10" />
                     <ItemBtn danger onClick={handleLogout}>
                       Logout
@@ -139,7 +240,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* METRICS */}
+      {/* ─── Main content ───────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <Metric title="Total Profit" value={`$${totalProfit.toFixed(2)}`} />
         <Metric title="Win Rate" value={`${winRate.toFixed(1)}%`}>
@@ -149,7 +250,6 @@ export default function Dashboard() {
         <Metric title="Total Trades" value={totalTrades} />
       </div>
 
-      {/* MAIN CONTENT */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <Card className="lg:col-span-2">
           <CumulativeGraph trades={flatTrades} />
@@ -159,7 +259,6 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* BOTTOM ROW */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-auto">
         <Card>
           <h2 className="text-lg font-semibold mb-3 text-gray-300">
@@ -209,21 +308,19 @@ export default function Dashboard() {
         </motion.div>
       </div>
 
-      {/* FLOATING ADD BUTTON */}
+      {/* Floating Add Button */}
       <AnimatePresence>
         <motion.button
           whileHover={{ scale: 1.08 }}
           whileTap={{ scale: 0.96 }}
           className="fixed bottom-6 right-6 bg-emerald-500 text-white rounded-full shadow-lg p-4 hover:bg-emerald-600 focus:outline-none"
           onClick={() => setShowAdd(true)}
-          aria-label="Add Trade"
-          title="Add Trade"
         >
           <Plus size={24} />
         </motion.button>
       </AnimatePresence>
 
-      {/* ADD TRADE MODAL */}
+      {/* Add Trade Modal */}
       <AddTradeModal
         open={showAdd}
         onClose={() => setShowAdd(false)}
@@ -236,8 +333,7 @@ export default function Dashboard() {
   );
 }
 
-/* ───────────────────────────────── COMPONENTS ─────────────────────────── */
-
+/* ───────── Components ───────── */
 const Metric = ({ title, value, children }) => (
   <div className="glass-card rounded-2xl p-5 border border-neutral-800 flex flex-col justify-between hover:border-emerald-500/40 transition-all relative overflow-hidden">
     <div>
@@ -288,17 +384,14 @@ const SyncStatusIndicator = ({ status }) => {
   return <p className={`text-sm ${color}`}>Sync status: {text}</p>;
 };
 
-// Win-rate ring with better spacing + soft pulse glow
 const WinRateRing = ({ percentage }) => {
-  const radius = 22; // more breathing room
+  const radius = 22;
   const circumference = 2 * Math.PI * radius;
   const clamped = Math.max(0, Math.min(100, percentage));
   const offset = circumference - (clamped / 100) * circumference;
-
   return (
     <div className="absolute right-4 top-4">
       <div className="relative">
-        {/* subtle glow */}
         <motion.div
           className="absolute inset-0 rounded-full"
           initial={{ boxShadow: "0 0 0px rgba(16,185,129,0.35)" }}
@@ -312,14 +405,7 @@ const WinRateRing = ({ percentage }) => {
           transition={{ duration: 2.4, repeat: Infinity }}
         />
         <svg className="w-16 h-16" viewBox="0 0 60 60">
-          <circle
-            cx="30"
-            cy="30"
-            r={radius}
-            stroke="#1f2937"
-            strokeWidth="6"
-            fill="none"
-          />
+          <circle cx="30" cy="30" r={radius} stroke="#1f2937" strokeWidth="6" fill="none" />
           <motion.circle
             cx="30"
             cy="30"
@@ -348,10 +434,10 @@ const WinRateRing = ({ percentage }) => {
   );
 };
 
-/* ─────────────────────────── Glassmorphism base ────────────────────────── */
+/* ───────── Glassmorphism Style ───────── */
 const style = document.createElement("style");
 style.innerHTML = `
-.glass-card{
+.glass-card {
   background: rgba(18, 18, 18, 0.40);
   backdrop-filter: blur(12px);
   box-shadow: 0 0 25px rgba(0, 255, 200, 0.05);
