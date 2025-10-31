@@ -1,12 +1,5 @@
-import React, { useEffect, useState, Suspense } from "react";
-import {
-  Routes,
-  Route,
-  Navigate,
-  useLocation,
-  useNavigate,
-  Outlet,
-} from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Routes, Route, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { supabase } from "./lib/supabaseClient";
 
@@ -24,7 +17,6 @@ import Landing from "./pages/Landing";
 import Goals from "./pages/Goals";
 import Cancelled from "./pages/Cancelled";
 import Subscribe from "./pages/Subscribe";
-import Renewed from "./pages/Renewed";
 
 // Layout + UI
 import BottomNav from "./components/Layout/BottomNav";
@@ -45,7 +37,7 @@ export default function App() {
   const [showLanding, setShowLanding] = useState(false);
   const [bootingUp, setBootingUp] = useState(false);
 
-  // Show landing once per session
+  // ✅ Show landing once per session
   useEffect(() => {
     const hasSeenLanding = sessionStorage.getItem("hasSeenLanding");
     if (!hasSeenLanding) {
@@ -54,7 +46,7 @@ export default function App() {
     }
   }, []);
 
-  // Handle Supabase email links (verification / recovery)
+  // ✅ Handle Supabase verification & recovery links
   useEffect(() => {
     const hash = window.location.hash;
     if (!hash) return;
@@ -64,10 +56,7 @@ export default function App() {
     const refresh_token = params.get("refresh_token");
     const type = params.get("type");
 
-    if (type) {
-      // Clean the hash to avoid reprocessing
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
+    if (type) window.history.replaceState({}, document.title, window.location.pathname);
 
     if (type === "signup" && access_token) {
       setSuppressRedirect(true);
@@ -75,7 +64,7 @@ export default function App() {
         .setSession({ access_token, refresh_token })
         .then(() => navigate("/verified", { replace: true }))
         .catch((err) => {
-          console.error("Failed to set session:", err);
+          console.error("❌ Failed to set session:", err);
           navigate("/auth");
         });
     }
@@ -86,21 +75,24 @@ export default function App() {
       supabase.auth
         .setSession({ access_token, refresh_token })
         .then(() => navigate("/reset-password", { replace: true }))
-        .catch((err) => console.error(err));
+        .catch(console.error);
     }
   }, [navigate]);
 
-  // Listen for auth changes
+  // ✅ Listen for Supabase auth state change (fixes post-verification redirect)
   useEffect(() => {
-    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" && session) {
         navigate("/dashboard", { replace: true });
       }
     });
-    return () => data.subscription.unsubscribe();
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
   }, [navigate]);
 
-  // Smooth redirect after login (boot effect)
+  // ✅ Smooth redirect after login (with boot animation)
   useEffect(() => {
     if (
       !loading &&
@@ -113,32 +105,27 @@ export default function App() {
       if (location.pathname === "/auth" || location.pathname === "/") {
         setRedirected(true);
         setBootingUp(true);
+
+        // Simulate “system boot”
         setTimeout(() => {
           navigate("/dashboard", { replace: true });
           setBootingUp(false);
-        }, 2000);
+        }, 2200);
       }
     }
-  }, [
-    user,
-    loading,
-    redirected,
-    navigate,
-    recoveryMode,
-    suppressRedirect,
-    location.pathname,
-  ]);
+  }, [user, loading, redirected, navigate, recoveryMode, suppressRedirect, location.pathname]);
 
-  // Page transition loader
+  // ✅ Page loader — smoother transition
   useEffect(() => {
     setPageLoading(true);
-    const t = setTimeout(() => setPageLoading(false), 1000);
+    const t = setTimeout(() => setPageLoading(false), 1200);
     return () => clearTimeout(t);
   }, [location.pathname]);
 
-  // Loaders
+  // ✅ Loader while checking auth
   if (loading) return <NeonLoader text="Checking authentication..." />;
 
+  // ✅ Landing screen (smooth fade into Auth)
   if (showLanding) {
     return (
       <div className="min-h-screen bg-[#0A0A0B] flex items-center justify-center overflow-hidden">
@@ -151,15 +138,21 @@ export default function App() {
             transition={{ duration: 0.8 }}
             className="absolute inset-0 bg-[#0A0A0B]"
           >
-            <Landing onFinish={() => setTimeout(() => setShowLanding(false), 300)} />
+            <Landing
+              onFinish={() => {
+                setTimeout(() => setShowLanding(false), 300);
+              }}
+            />
           </motion.div>
         </AnimatePresence>
       </div>
     );
   }
 
+  // ✅ Boot loader before dashboard
   if (bootingUp) return <NeonLoader text="Initializing Trading Environment..." />;
 
+  // ✅ Page loader between routes
   if (pageLoading && user) {
     const current = location.pathname.replace("/", "") || "dashboard";
     return <NeonLoader text={`Loading ${current}...`} />;
@@ -169,62 +162,49 @@ export default function App() {
     <div className="min-h-screen bg-[#0A0A0B] text-white flex flex-col transition-all duration-500">
       <AnimatePresence mode="wait">
         <AnimatedPageWrapper key={location.pathname}>
-          <Suspense fallback={<NeonLoader text="Loading interface..." />}>
-            <Routes location={location}>
-              {/* Default route */}
+          <Routes location={location}>
+            {/* Default route */}
+            <Route
+              path="/"
+              element={user ? <Navigate to="/dashboard" replace /> : <Navigate to="/auth" replace />}
+            />
+
+            {/* Public routes */}
+            <Route path="/auth" element={<Auth />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/verified" element={<Verified />} />
+            <Route path="/subscribe" element={<Subscribe />} />
+            <Route path="/cancelled" element={<Cancelled />} />
+
+            {/* Protected routes with subscription check */}
+            {user && (
               <Route
-                path="/"
+                element={<RequireSubscription user={user}><></></RequireSubscription>}
+              >
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/analytics" element={<Analytics />} />
+                <Route path="/calendar" element={<Calendar />} />
+                <Route path="/journal" element={<Journal />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="/goals" element={<Goals />} />
+              </Route>
+            )}
+
+            {/* Fallback */}
+            {!user && (
+              <Route
+                path="*"
                 element={
-                  user ? <Navigate to="/dashboard" replace /> : <Navigate to="/auth" replace />
+                  location.pathname === "/verified" ? <Verified /> : <Navigate to="/auth" replace />
                 }
               />
-
-              {/* Public routes */}
-              <Route path="/auth" element={<Auth />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/verified" element={<Verified />} />
-              <Route path="/subscribe" element={<Subscribe />} />
-              <Route path="/cancelled" element={<Cancelled />} />
-              <Route path="/renewed" element={<Renewed />} />
-
-              {/* Protected routes (require active subscription) */}
-              {user && (
-                <Route
-                  element={
-                    <RequireSubscription user={user}>
-                      <Outlet />
-                    </RequireSubscription>
-                  }
-                >
-                  <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/analytics" element={<Analytics />} />
-                  <Route path="/calendar" element={<Calendar />} />
-                  <Route path="/journal" element={<Journal />} />
-                  <Route path="/settings" element={<Settings />} />
-                  <Route path="/profile" element={<Profile />} />
-                  <Route path="/goals" element={<Goals />} />
-                </Route>
-              )}
-
-              {/* Fallback for unauthenticated users hitting random routes */}
-              {!user && (
-                <Route
-                  path="*"
-                  element={
-                    location.pathname === "/verified" ? (
-                      <Verified />
-                    ) : (
-                      <Navigate to="/auth" replace />
-                    )
-                  }
-                />
-              )}
-            </Routes>
-          </Suspense>
+            )}
+          </Routes>
         </AnimatedPageWrapper>
       </AnimatePresence>
 
-      {/* Bottom nav (hide on auth/verification flows) */}
+      {/* ✅ Bottom nav */}
       {user &&
         !recoveryMode &&
         !["/auth", "/verified", "/reset-password", "/cancelled", "/subscribe"].includes(
