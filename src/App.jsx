@@ -37,8 +37,11 @@ export default function App() {
   const [showLanding, setShowLanding] = useState(false);
   const [bootingUp, setBootingUp] = useState(false);
 
-  // ✅ Show landing once per session
+  // ✅ Show landing once per session (but NOT on /verified)
   useEffect(() => {
+    const path = window.location.pathname;
+    if (path === "/verified") return; // Skip intro for verified route
+
     const hasSeenLanding = sessionStorage.getItem("hasSeenLanding");
     if (!hasSeenLanding) {
       setShowLanding(true);
@@ -125,7 +128,7 @@ export default function App() {
   if (loading) return <NeonLoader text="Checking authentication..." />;
 
   // ✅ Landing screen
-  if (showLanding) {
+  if (showLanding && location.pathname !== "/verified") {
     return (
       <div className="min-h-screen bg-[#0A0A0B] flex items-center justify-center overflow-hidden">
         <AnimatePresence mode="wait">
@@ -148,11 +151,13 @@ export default function App() {
     );
   }
 
-  // ✅ Boot loader before dashboard
-  if (bootingUp) return <NeonLoader text="Initializing Trading Environment..." />;
+  // ✅ Boot loader before dashboard (skip for verified route)
+  if (bootingUp && location.pathname !== "/verified") {
+    return <NeonLoader text="Initializing Trading Environment..." />;
+  }
 
   // ✅ Page loader between routes
-  if (pageLoading && user) {
+  if (pageLoading && user && location.pathname !== "/verified") {
     const current = location.pathname.replace("/", "") || "dashboard";
     return <NeonLoader text={`Loading ${current}...`} />;
   }
@@ -177,7 +182,7 @@ export default function App() {
             <Route path="/cancelled" element={<Cancelled />} />
             <Route path="/renewed" element={<Renewed />} />
 
-            {/* ✅ TEMPORARY direct protected routes */}
+            {/* Authenticated routes */}
             {user && (
               <>
                 <Route path="/dashboard" element={<Dashboard />} />

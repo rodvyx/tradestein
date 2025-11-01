@@ -23,23 +23,30 @@ export default function Dashboard() {
 
   const menuRef = useRef(null);
 
-  // ✅ Call the custom hook UNCONDITIONALLY (even if user is null)
+  // ✅ Always call the hook
   const { trades, syncStatus, saveTrade } = useSupabaseTrades(user?.id);
 
-  // ─────────────────────────── DATA DERIVED FROM TRADES
-  // (Call useMemo BEFORE any possible early return so hooks order is stable)
-  const flatTrades = useMemo(() => {
-    if (!trades) return [];
-    return Object.values(trades).flat();
-  }, [trades]);
+  // ─────────────────────────── TRADES & METRICS
+  const flatTrades = useMemo(() => (trades ? Object.values(trades).flat() : []), [trades]);
 
-  // ─── Metrics
+  // auto-fill missing RR values
+  useEffect(() => {
+    const recalc = async () => {
+      if (!flatTrades.length) return;
+      const toUpdate = flatTrades.filter((t) => !t.final_rr && t.pnl && t.amount_risked);
+      for (const t of toUpdate) {
+        const rr = Number(t.pnl) / Number(t.amount_risked);
+        await supabase.from("trades").update({ final_rr: rr }).eq("id", t.id);
+      }
+    };
+    recalc();
+  }, [flatTrades]);
+
   const totalProfit = flatTrades.reduce((s, t) => s + (Number(t.pnl) || 0), 0);
   const totalTrades = flatTrades.length;
   const winningTrades = flatTrades.filter((t) => Number(t.pnl) > 0).length;
   const avgRR =
-    flatTrades.reduce((s, t) => s + (Number(t.final_rr) || 0), 0) /
-    (totalTrades || 1);
+    flatTrades.reduce((s, t) => s + (Number(t.final_rr) || 0), 0) / (totalTrades || 1);
   const winRate = totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0;
 
   // ─── Daily Snapshot
@@ -51,7 +58,7 @@ export default function Dashboard() {
     hour >= 6 && hour < 15 ? "London" : hour >= 12 && hour < 21 ? "New York" : "Asia";
 
   // ─── Psychology
-  const lastTrade = flatTrades[flatTrades.length - 1];
+  const lastTrade = flatTrades.at(-1);
   const lastEmotion = lastTrade?.emotions || "😊 Calm / Focused";
   const discipline = lastTrade ? "✅" : "—";
 
@@ -64,30 +71,22 @@ export default function Dashboard() {
   ];
   const quote = quotes[Math.floor(Math.random() * quotes.length)];
 
-  // ─────────────────────────── EFFECTS (NO HOOKS INSIDE CONDITIONS)
-  // Show success/renewal banner if redirected with state
+  // ─────────────────────────── EFFECTS
   useEffect(() => {
     if (location.state?.showRenewalBanner) {
       setShowBanner(true);
       setTimeout(() => setShowBanner(false), 4000);
-      // clear the state so it doesn't persist
       window.history.replaceState({}, document.title);
     }
   }, [location]);
 
-  // Fetch current user once
   useEffect(() => {
-    const fetchUser = async () => {
-      const { data } = await supabase.auth.getUser();
-      setUser(data?.user || null);
-    };
-    fetchUser();
+    supabase.auth.getUser().then(({ data }) => setUser(data?.user || null));
   }, []);
 
-  // Check subscription when user loads
   useEffect(() => {
-    const checkSubscriptionStatus = async () => {
-      if (!user) return; // wait for user
+    const checkSub = async () => {
+      if (!user) return;
       const { data, error } = await supabase
         .from("profiles")
         .select("subscription_status, updated_at")
@@ -100,90 +99,58 @@ export default function Dashboard() {
         return;
       }
 
-      if (data?.subscription_status === "active") {
+      const status = data?.subscription_status;
+      if (status === "active") {
         setLoading(false);
-
-        // Banner if recently renewed/updated
-        const recentlyRenewed = sessionStorage.getItem("recentlyRenewed");
         const updatedAt = new Date(data?.updated_at || new Date());
-        const hoursSinceUpdate = (Date.now() - updatedAt.getTime()) / (1000 * 60 * 60);
-
-        if (recentlyRenewed === "true" || hoursSinceUpdate < 24) {
-          setShowBanner(true);
-          sessionStorage.removeItem("recentlyRenewed");
-          setTimeout(() => setShowBanner(false), 4000);
-        }
-      } else if (data?.subscription_status === "cancelled") {
+        const hours = (Date.now() - updatedAt.getTime()) / 36e5;
+        if (hours < 24) setShowBanner(true);
+      } else if (status === "cancelled") {
         setRedirecting(true);
-        // keep SPA navigation
         setTimeout(() => navigate("/cancelled", { replace: true }), 1200);
-      } else {
-        // non-active but not explicitly cancelled → gate behind RequireSubscription anyway
-        setLoading(false);
-      }
+      } else setLoading(false);
     };
-
-    checkSubscriptionStatus();
+    checkSub();
   }, [user, navigate]);
 
-  // Realtime subscription updates
   useEffect(() => {
     if (!user) return;
-
     const channel = supabase
       .channel("realtime:profiles")
       .on(
         "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "profiles",
-          filter: `email=eq.${user.email}`,
-        },
+        { event: "UPDATE", schema: "public", table: "profiles", filter: `email=eq.${user.email}` },
         (payload) => {
-          const newStatus = payload.new.subscription_status;
-          if (newStatus === "active") {
-            sessionStorage.setItem("recentlyRenewed", "true");
-            setRedirecting(true);
-            setTimeout(() => navigate("/renewed", { replace: true }), 1200);
-          } else if (newStatus !== "active") {
-            setRedirecting(true);
-            setTimeout(() => navigate("/cancelled", { replace: true }), 1200);
-          }
+          const s = payload.new.subscription_status;
+          setRedirecting(true);
+          setTimeout(() => navigate(s === "active" ? "/renewed" : "/cancelled", { replace: true }), 1000);
         }
       )
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => supabase.removeChannel(channel);
   }, [user, navigate]);
 
-  // Close avatar menu on outside click
   useEffect(() => {
     const onClickOutside = (e) => {
-      if (menuRef.current && !menuRef.current.contains(e.target)) {
-        setMenuOpen(false);
-      }
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
     };
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
-  // ─────────────────────────── HANDLERS
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate("/auth", { replace: true });
   };
 
-  // ─────────────────────────── OPTIONAL LOADERS (hooks already ran above)
+  // ─────────────────────────── LOADERS
   if (redirecting) return <NeonLoader text="Checking subscription..." />;
   if (loading) return <NeonLoader text="Loading dashboard..." />;
 
   // ─────────────────────────── UI
   return (
     <div className="relative min-h-screen bg-[#0A0A0B] text-white p-6 flex flex-col overflow-hidden">
-      {/* ✅ ACCESS RESTORED BANNER */}
+      {/* Banner */}
       <AnimatePresence>
         {showBanner && (
           <motion.div
@@ -194,8 +161,7 @@ export default function Dashboard() {
             className="fixed top-4 left-1/2 -translate-x-1/2 bg-emerald-500/90 text-slate-900 font-semibold px-6 py-2 rounded-full shadow-[0_0_25px_rgba(16,185,129,0.45)] z-[100]"
           >
             <div className="flex items-center gap-2">
-              <CheckCircle size={18} />
-              🎉 Pro Access Restored — Welcome back!
+              <CheckCircle size={18} /> 🎉 Pro Access Restored — Welcome back!
             </div>
           </motion.div>
         )}
@@ -204,10 +170,8 @@ export default function Dashboard() {
       {/* HEADER */}
       <div className="flex flex-wrap items-center justify-between mb-6">
         <h1 className="text-3xl font-bold text-emerald-400 drop-shadow">Tradestein</h1>
-
         <div className="flex items-center gap-4">
           <SyncStatusIndicator status={syncStatus} />
-
           {user && (
             <div ref={menuRef} className="relative">
               <button
@@ -220,14 +184,11 @@ export default function Dashboard() {
                   className="w-8 h-8 rounded-full"
                 />
                 <div className="text-left hidden sm:block">
-                  <p className="text-sm font-medium leading-tight">
-                    {user.email?.split("@")[0]}
-                  </p>
+                  <p className="text-sm font-medium leading-tight">{user.email?.split("@")[0]}</p>
                   <p className="text-[11px] text-gray-500 leading-tight">Active Trader</p>
                 </div>
                 <ChevronDown className="w-4 h-4 text-gray-400" />
               </button>
-
               <AnimatePresence>
                 {menuOpen && (
                   <motion.div
@@ -243,7 +204,9 @@ export default function Dashboard() {
                       <ItemBtn>Settings</ItemBtn>
                     </Link>
                     <div className="h-px bg-white/10" />
-                    <ItemBtn danger onClick={handleLogout}>Logout</ItemBtn>
+                    <ItemBtn danger onClick={handleLogout}>
+                      Logout
+                    </ItemBtn>
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -300,7 +263,8 @@ export default function Dashboard() {
               <span className="text-yellow-400 font-medium">{lastEmotion}</span>
             </p>
             <p>
-              Discipline: <span className="text-emerald-400 font-medium">{discipline}</span>
+              Discipline:{" "}
+              <span className="text-emerald-400 font-medium">{discipline}</span>
             </p>
           </div>
         </Card>
@@ -343,7 +307,7 @@ export default function Dashboard() {
   );
 }
 
-/* ───────── Components ───────── */
+/* ───────── Helper Components ───────── */
 const Metric = ({ title, value, children }) => (
   <div className="glass-card rounded-2xl p-5 border border-neutral-800 flex flex-col justify-between hover:border-emerald-500/40 transition-all relative overflow-hidden">
     <div>
@@ -356,9 +320,7 @@ const Metric = ({ title, value, children }) => (
 );
 
 const Card = ({ children, className = "" }) => (
-  <div
-    className={`glass-card p-5 rounded-2xl border border-neutral-800 hover:border-emerald-500/40 transition-all ${className}`}
-  >
+  <div className={`glass-card p-5 rounded-2xl border border-neutral-800 hover:border-emerald-500/40 transition-all ${className}`}>
     {children}
   </div>
 );
@@ -366,9 +328,7 @@ const Card = ({ children, className = "" }) => (
 const ItemBtn = ({ children, onClick, danger }) => (
   <button
     onClick={onClick}
-    className={`w-full text-left px-3 py-2 text-sm ${
-      danger ? "text-red-400 hover:bg-red-500/10" : "hover:bg-white/5"
-    }`}
+    className={`w-full text-left px-3 py-2 text-sm ${danger ? "text-red-400 hover:bg-red-500/10" : "hover:bg-white/5"}`}
   >
     {children}
   </button>
@@ -439,15 +399,14 @@ const WinRateRing = ({ percentage }) => {
   );
 };
 
-/* ───────── Glassmorphism Style ───────── */
+/* ───────── Glass Style ───────── */
 const style = document.createElement("style");
 style.innerHTML = `
 .glass-card {
-  background: rgba(18, 18, 18, 0.40);
+  background: rgba(18,18,18,0.40);
   backdrop-filter: blur(12px);
-  box-shadow: 0 0 25px rgba(0, 255, 200, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: 0 0 25px rgba(0,255,200,0.05);
+  border: 1px solid rgba(255,255,255,0.06);
   border-radius: 16px;
-}
-`;
+}`;
 document.head.appendChild(style);

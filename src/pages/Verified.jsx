@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import NeonLoader from "../components/ui/NeonLoader";
@@ -32,13 +32,10 @@ export default function Verified() {
           console.warn("⚠️ No tokens in URL. Assuming verified link without session.");
         }
 
-        // Fetch user (optional, just to confirm)
         const { data } = await supabase.auth.getUser();
-
         if (data?.user) {
           console.log("✅ Verified user:", data.user.email);
-          // Optional: sign out immediately after verification
-          await supabase.auth.signOut();
+          await supabase.auth.signOut(); // optional cleanup
         }
 
         setTimeout(() => setStatus("success"), 600);
@@ -51,17 +48,11 @@ export default function Verified() {
     verifyEmail();
   }, []);
 
-  // ✅ Neon loader while verifying or redirecting
+  // ✅ Neon loader during verify or redirect
   if (status === "checking" || redirecting) {
     return (
       <NeonLoader
-        text={
-          redirecting
-            ? import.meta.env.DEV
-              ? "Returning to Auth..."
-              : "Redirecting to Dashboard..."
-            : "Verifying your email..."
-        }
+        text={redirecting ? "Redirecting to Dashboard..." : "Verifying your email..."}
       />
     );
   }
@@ -86,7 +77,7 @@ export default function Verified() {
     );
   }
 
-  // ✅ Success state (even without token)
+  // ✅ Success state
   return (
     <div className="relative flex flex-col items-center justify-center h-screen bg-[#0A0A0B] overflow-hidden text-center px-4">
       <ParticlesBg />
@@ -149,58 +140,67 @@ export default function Verified() {
         </motion.div>
       )}
 
-      {/* ✅ Success Card */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: showPulse ? 0 : 1, y: showPulse ? 20 : 0 }}
-        transition={{ duration: 0.6, delay: showPulse ? 1.2 : 0 }}
-        className="bg-[#111113]/80 backdrop-blur-lg border border-emerald-500/50 rounded-2xl shadow-[0_0_25px_#10b981] p-8 max-w-md w-full relative z-10"
-      >
-        <motion.div
-          initial={{ scale: 0 }}
-          animate={{ scale: 1 }}
-          transition={{
-            type: "spring",
-            stiffness: 200,
-            damping: 12,
-            delay: 1.2,
-          }}
-          className="text-5xl mb-4"
-        >
-          ✅
-        </motion.div>
-        <h1 className="text-2xl font-semibold text-emerald-400 mb-2">
-          Email Verified Successfully
-        </h1>
-        <p className="text-gray-400 text-sm mb-6">
-          Your account is now active. You can continue to your dashboard.
-        </p>
+      {/* ✅ Success Card with Fade-out Transition */}
+      <AnimatePresence>
+        {!redirecting && (
+          <motion.div
+            key="success-card"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: showPulse ? 0 : 1, y: showPulse ? 20 : 0 }}
+            exit={{ opacity: 0, scale: 0.95, filter: "blur(4px)" }}
+            transition={{ duration: 0.6 }}
+            className="bg-[#111113]/80 backdrop-blur-lg border border-emerald-500/50 rounded-2xl shadow-[0_0_25px_#10b981] p-8 max-w-md w-full relative z-10"
+          >
+            <motion.div
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{
+                type: "spring",
+                stiffness: 200,
+                damping: 12,
+                delay: 1.2,
+              }}
+              className="text-5xl mb-4"
+            >
+              ✅
+            </motion.div>
+            <h1 className="text-2xl font-semibold text-emerald-400 mb-2">
+              Email Verified Successfully
+            </h1>
+            <p className="text-gray-400 text-sm mb-6">
+              Your account is now active. You can continue to your dashboard.
+            </p>
 
-        <motion.button
-          whileHover={{
-            scale: 1.05,
-            boxShadow: [
-              "0 0 10px #10b981",
-              "0 0 20px #10b981",
-              "0 0 10px #10b981",
-            ],
-          }}
-          transition={{
-            duration: 0.5,
-            repeat: Infinity,
-            repeatType: "reverse",
-          }}
-          onClick={() => {
-            setRedirecting(true);
-            setTimeout(() => {
-              import.meta.env.DEV ? navigate("/auth") : navigate("/dashboard");
-            }, 1000);
-          }}
-          className="px-6 py-2 bg-gradient-to-r from-purple-500 to-emerald-500 hover:from-purple-400 hover:to-emerald-400 rounded-lg text-white font-medium transition-all shadow-[0_0_10px_#10b981]"
-        >
-          {import.meta.env.DEV ? "Return to Auth" : "Go to Dashboard"}
-        </motion.button>
-      </motion.div>
+            <motion.button
+              whileHover={{
+                scale: 1.05,
+                boxShadow: [
+                  "0 0 10px #10b981",
+                  "0 0 20px #10b981",
+                  "0 0 10px #10b981",
+                ],
+              }}
+              transition={{
+                duration: 0.5,
+                repeat: Infinity,
+                repeatType: "reverse",
+              }}
+              onClick={() => {
+                // ✨ Fade out the success card
+                setRedirecting(true);
+                setTimeout(() => {
+                  import.meta.env.DEV
+                    ? navigate("/auth")
+                    : navigate("/dashboard");
+                }, 2000);
+              }}
+              className="px-6 py-2 bg-gradient-to-r from-purple-500 to-emerald-500 hover:from-purple-400 hover:to-emerald-400 rounded-lg text-white font-medium transition-all shadow-[0_0_10px_#10b981]"
+            >
+              {import.meta.env.DEV ? "Return to Auth" : "Go to Dashboard"}
+            </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
