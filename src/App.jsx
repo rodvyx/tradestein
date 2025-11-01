@@ -17,13 +17,13 @@ import Landing from "./pages/Landing";
 import Goals from "./pages/Goals";
 import Cancelled from "./pages/Cancelled";
 import Subscribe from "./pages/Subscribe";
+import Renewed from "./pages/Renewed";
 
 // Layout + UI
 import BottomNav from "./components/Layout/BottomNav";
 import AnimatedPageWrapper from "./components/Layout/AnimatedPageWrapper";
 import { useAuth } from "./lib/useAuth";
 import NeonLoader from "./components/ui/NeonLoader";
-import RequireSubscription from "./components/RequireSubscription";
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -79,7 +79,7 @@ export default function App() {
     }
   }, [navigate]);
 
-  // ✅ Listen for Supabase auth state change (fixes post-verification redirect)
+  // ✅ Listen for Supabase auth state change
   useEffect(() => {
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_IN" && session) {
@@ -106,7 +106,6 @@ export default function App() {
         setRedirected(true);
         setBootingUp(true);
 
-        // Simulate “system boot”
         setTimeout(() => {
           navigate("/dashboard", { replace: true });
           setBootingUp(false);
@@ -115,7 +114,7 @@ export default function App() {
     }
   }, [user, loading, redirected, navigate, recoveryMode, suppressRedirect, location.pathname]);
 
-  // ✅ Page loader — smoother transition
+  // ✅ Page loader transition
   useEffect(() => {
     setPageLoading(true);
     const t = setTimeout(() => setPageLoading(false), 1200);
@@ -125,7 +124,7 @@ export default function App() {
   // ✅ Loader while checking auth
   if (loading) return <NeonLoader text="Checking authentication..." />;
 
-  // ✅ Landing screen (smooth fade into Auth)
+  // ✅ Landing screen
   if (showLanding) {
     return (
       <div className="min-h-screen bg-[#0A0A0B] flex items-center justify-center overflow-hidden">
@@ -158,6 +157,7 @@ export default function App() {
     return <NeonLoader text={`Loading ${current}...`} />;
   }
 
+  // ✅ MAIN ROUTES
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-white flex flex-col transition-all duration-500">
       <AnimatePresence mode="wait">
@@ -175,12 +175,11 @@ export default function App() {
             <Route path="/verified" element={<Verified />} />
             <Route path="/subscribe" element={<Subscribe />} />
             <Route path="/cancelled" element={<Cancelled />} />
+            <Route path="/renewed" element={<Renewed />} />
 
-            {/* Protected routes with subscription check */}
+            {/* ✅ TEMPORARY direct protected routes */}
             {user && (
-              <Route
-                element={<RequireSubscription user={user}><></></RequireSubscription>}
-              >
+              <>
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/calendar" element={<Calendar />} />
@@ -188,7 +187,7 @@ export default function App() {
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/profile" element={<Profile />} />
                 <Route path="/goals" element={<Goals />} />
-              </Route>
+              </>
             )}
 
             {/* Fallback */}
